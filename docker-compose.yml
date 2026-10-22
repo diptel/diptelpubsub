@@ -36,7 +36,7 @@ services:
       # a domain + SSL). Must stay "false" for plain-HTTP LAN/IP access like this deployment.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ports:
-      - "8080:8080"
+      - "${HOST_PORT:-8080}:8080"
     networks:
       - pushhub_net
 
