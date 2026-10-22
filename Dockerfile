@@ -1,10 +1,11 @@
 # Build stage
 FROM golang:1.22-alpine AS build
 WORKDIR /src
-COPY go.mod go.sum* ./
-RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/pushhub ./cmd/server
+# go.sum is generated here (not committed) since dependencies were added without
+# network access to the Go module proxy during development; this build host has
+# normal internet access, so `go mod tidy` resolves and verifies them at build time.
+RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /out/pushhub ./cmd/server
 
 # Run stage
 FROM alpine:3.20
