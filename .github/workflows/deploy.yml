@@ -1,25 +1,27 @@
 name: Deploy PushHub
 
 # Jalan otomatis tiap ada push ke main, atau bisa dipicu manual dari tab Actions.
+# Pakai SELF-HOSTED runner: job ini jalan LANGSUNG di server 1Panel kamu (lihat README
+# bagian "Auto-deploy" untuk cara install runner-nya), jadi tidak perlu SSH dari luar dan
+# server boleh tetap di belakang IP lokal/firewall — tidak ada secret SSH yang dibutuhkan.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+env:
+  # Folder tempat repo ini sudah di-clone manual di server (lihat README "Menjalankan").
+  # Ganti kalau kamu clone ke path lain.
+  DEPLOY_PATH: /opt/1panel/docker/compose/diptelpubsub
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: SSH and redeploy on server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            cd ${{ secrets.DEPLOY_PATH }}
-            git fetch origin main
-            git reset --hard origin/main
-            docker compose up -d --build
-            docker image prune -f
+      - name: Pull latest code and redeploy
+        run: |
+          cd "$DEPLOY_PATH"
+          git fetch origin main
+          git reset --hard origin/main
+          docker compose up -d --build
+          docker image prune -f

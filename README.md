@@ -86,39 +86,41 @@ pada umumnya.
 
 ## Auto-deploy saat push ke GitHub
 
-Repo ini sudah punya workflow `.github/workflows/deploy.yml` yang otomatis SSH ke server dan
-menjalankan `git pull` + `docker compose up -d --build` tiap ada push ke branch `main`. Supaya
-aktif, tambahkan 5 secrets ini di GitHub repo:
-**Settings → Secrets and variables → Actions → New repository secret**
+Repo ini pakai **self-hosted GitHub Actions runner**: tiap push ke `main`, job deploy jalan
+**langsung di server 1Panel kamu sendiri** (bukan di server GitHub) — jadi tidak perlu expose
+SSH ke internet, tidak perlu IP publik, aman walau server di belakang IP lokal/firewall.
 
-| Secret            | Isi                                                              |
-|-------------------|-------------------------------------------------------------------|
-| `DEPLOY_HOST`     | IP atau domain server 1Panel kamu                                  |
-| `DEPLOY_USER`     | user SSH di server (mis. `root` atau user khusus deploy)           |
-| `DEPLOY_SSH_KEY`  | private key SSH (format PEM) yang public key-nya sudah ditaruh di `~/.ssh/authorized_keys` server |
-| `DEPLOY_PORT`     | port SSH server, biasanya `22`                                     |
-| `DEPLOY_PATH`     | path folder project di server, mis. `/opt/diptelpubsub`             |
+**Setup sekali di awal, di server (lewat Terminal 1Panel):**
 
-Langkah sekali di awal, di server:
+1. Clone & jalankan seperti biasa dulu (lihat bagian "Menjalankan" di atas) — pastikan
+   `docker compose up -d --build` sudah pernah berhasil di `/opt/1panel/docker/compose/diptelpubsub`.
 
-```sh
-mkdir -p /opt/diptelpubsub
-cd /opt/diptelpubsub
-git clone https://github.com/diptel/diptelpubsub.git .
-cp .env.example .env   # isi POSTGRES_PASSWORD & ADMIN_TOKEN
-docker compose up -d --build
-```
+2. Install GitHub Actions runner. Di GitHub: buka repo **diptelpubsub** → **Settings → Actions
+   → Runners → New self-hosted runner** → pilih **Linux**, **x64**. GitHub akan kasih 4 perintah
+   persis seperti ini (token-nya unik, beda tiap kali, copy dari halaman itu):
+   ```sh
+   mkdir ~/actions-runner && cd ~/actions-runner
+   curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/vX.X.X/actions-runner-linux-x64-X.X.X.tar.gz
+   tar xzf ./actions-runner-linux-x64.tar.gz
+   ./config.sh --url https://github.com/diptel/diptelpubsub --token <TOKEN_DARI_GITHUB>
+   ```
+   Saat `./config.sh` tanya-tanya, tekan Enter saja untuk semua pertanyaan (pakai default) —
+   nama runner dan label boleh default.
 
-Setelah itu, **tiap kali ada perubahan kode di-push ke `main`, GitHub Actions otomatis login ke
-server dan redeploy** — tidak perlu SSH manual lagi. Status jalannya bisa dicek di tab
-**Actions** repo ini.
+3. Install sebagai service, biar tetap jalan walau server restart:
+   ```sh
+   sudo ./svc.sh install
+   sudo ./svc.sh start
+   ```
 
-Kalau mau generate SSH key khusus untuk deploy (dipisah dari key pribadi), di server:
-```sh
-ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_deploy -N ""
-cat ~/.ssh/github_deploy.pub >> ~/.ssh/authorized_keys
-cat ~/.ssh/github_deploy          # isi ini ke secret DEPLOY_SSH_KEY
-```
+4. Cek statusnya di GitHub: **Settings → Actions → Runners** — harus muncul status hijau "Idle".
+
+Setelah ini, **tiap push ke `main`, server kamu sendiri yang otomatis `git pull` +
+`docker compose up -d --build`** — bisa dipantau di tab **Actions** repo ini. Tidak ada secret
+SSH yang perlu diisi sama sekali untuk jalur ini.
+
+Kalau folder project-nya bukan di `/opt/1panel/docker/compose/diptelpubsub`, ubah nilai
+`DEPLOY_PATH` di `.github/workflows/deploy.yml`.
 
 ## Mendaftarkan app baru (tenant)
 
