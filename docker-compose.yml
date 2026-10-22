@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pushhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pushhub}
+      POSTGRES_DB: pushhub
+    volumes:
+      - pushhub_pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pushhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pushhub_net
+
+  pushhub:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://pushhub:${POSTGRES_PASSWORD:-pushhub}@postgres:5432/pushhub?sslmode=disable
+      LISTEN_ADDR: ":8080"
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+    ports:
+      - "8080:8080"
+    networks:
+      - pushhub_net
+
+networks:
+  pushhub_net:
+
+volumes:
+  pushhub_pgdata:
