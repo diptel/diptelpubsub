@@ -46,6 +46,42 @@ Postgres (apps, subscriptions, notifications_log)
 Migrasi SQL di `migrations/0001_init.sql` otomatis dijalankan oleh image Postgres resmi saat
 volume database masih kosong (lewat `docker-entrypoint-initdb.d`).
 
+## Auto-deploy saat push ke GitHub
+
+Repo ini sudah punya workflow `.github/workflows/deploy.yml` yang otomatis SSH ke server dan
+menjalankan `git pull` + `docker compose up -d --build` tiap ada push ke branch `main`. Supaya
+aktif, tambahkan 5 secrets ini di GitHub repo:
+**Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret            | Isi                                                              |
+|-------------------|-------------------------------------------------------------------|
+| `DEPLOY_HOST`     | IP atau domain server 1Panel kamu                                  |
+| `DEPLOY_USER`     | user SSH di server (mis. `root` atau user khusus deploy)           |
+| `DEPLOY_SSH_KEY`  | private key SSH (format PEM) yang public key-nya sudah ditaruh di `~/.ssh/authorized_keys` server |
+| `DEPLOY_PORT`     | port SSH server, biasanya `22`                                     |
+| `DEPLOY_PATH`     | path folder project di server, mis. `/opt/diptelpubsub`             |
+
+Langkah sekali di awal, di server:
+
+```sh
+mkdir -p /opt/diptelpubsub
+cd /opt/diptelpubsub
+git clone https://github.com/diptel/diptelpubsub.git .
+cp .env.example .env   # isi POSTGRES_PASSWORD & ADMIN_TOKEN
+docker compose up -d --build
+```
+
+Setelah itu, **tiap kali ada perubahan kode di-push ke `main`, GitHub Actions otomatis login ke
+server dan redeploy** — tidak perlu SSH manual lagi. Status jalannya bisa dicek di tab
+**Actions** repo ini.
+
+Kalau mau generate SSH key khusus untuk deploy (dipisah dari key pribadi), di server:
+```sh
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_deploy -N ""
+cat ~/.ssh/github_deploy.pub >> ~/.ssh/authorized_keys
+cat ~/.ssh/github_deploy          # isi ini ke secret DEPLOY_SSH_KEY
+```
+
 ## Mendaftarkan app baru (tenant)
 
 Tiap project (riwariwi, briixbroadband, briix-capital, kasir, ...) didaftarkan sekali:
