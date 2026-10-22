@@ -27,6 +27,14 @@ services:
       DATABASE_URL: postgres://pushhub:${POSTGRES_PASSWORD:-pushhub}@postgres:5432/pushhub?sslmode=disable
       LISTEN_ADDR: ":8080"
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+      # Admin web panel login (username/password + TOTP). Only used once, to create the
+      # first admin account — after that, log in at /panel/ and these two can be removed.
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      TOTP_ISSUER: ${TOTP_ISSUER:-PushHub}
+      # Set to "true" once PushHub is served over HTTPS (e.g. behind a reverse proxy with
+      # a domain + SSL). Must stay "false" for plain-HTTP LAN/IP access like this deployment.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ports:
       - "8080:8080"
     networks:

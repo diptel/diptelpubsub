@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PushHub Admin</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f232c;
+    --border: #2a2f3a;
+    --text: #e6e8ec;
+    --muted: #9aa1ad;
+    --accent: #5b8def;
+    --accent-dark: #3f6fd1;
+    --danger: #e05d5d;
+    --ok: #4caf7d;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px; }
+  .center-wrap { max-width: 380px; margin: 10vh auto 0; padding: 0 20px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 16px;
+  }
+  .btn-primary { background: var(--accent); color: white; width: 100%; margin-top: 18px; }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-small { padding: 6px 10px; font-size: 12px; }
+  .error { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 16px; }
+  .qr-box { text-align: center; margin: 16px 0; }
+  .qr-box img { background: white; padding: 10px; border-radius: 8px; width: 200px; height: 200px; }
+  .secret {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    word-break: break-all;
+    margin: 8px 0 0;
+  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; }
+  code.key {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    background: var(--panel-2);
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    display: flex; align-items: center; justify-content: center; z-index: 10;
+  }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 360px; }
+  .hidden { display: none !important; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .pill { font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 8px; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--ok); color: white; padding: 10px 16px; border-radius: 8px; font-size: 13px;
+    opacity: 0; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- Login screen -->
+<div id="view-login" class="center-wrap hidden">
+  <h1>PushHub Admin</h1>
+  <p class="sub">Masuk untuk mengelola app/tenant push notification.</p>
+  <div class="card">
+    <label for="login-username">Username</label>
+    <input id="login-username" autocomplete="username" />
+    <label for="login-password">Password</label>
+    <input id="login-password" type="password" autocomplete="current-password" />
+    <div id="login-totp-field" class="hidden">
+      <label for="login-totp">Kode Authenticator (6 digit)</label>
+      <input id="login-totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+    </div>
+    <button class="btn-primary" id="login-submit">Masuk</button>
+    <div class="error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- TOTP enrollment screen -->
+<div id="view-totp-setup" class="center-wrap hidden">
+  <h1>Aktifkan Authenticator</h1>
+  <p class="sub">Scan QR ini pakai Google Authenticator / Authy / 1Password, lalu masukkan kode 6 digit untuk konfirmasi.</p>
+  <div class="card">
+    <div class="qr-box"><img id="totp-qr" alt="QR Code" /></div>
+    <div class="hint">Tidak bisa scan? Masukkan manual kode ini di app authenticator:</div>
+    <div class="secret" id="totp-secret"></div>
+    <label for="totp-confirm-code">Kode dari Authenticator</label>
+    <input id="totp-confirm-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+    <button class="btn-primary" id="totp-confirm-submit">Konfirmasi &amp; Aktifkan</button>
+    <div class="error" id="totp-setup-error"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="view-dashboard" class="wrap hidden">
+  <div class="topbar">
+    <div>
+      <h1>PushHub Admin</h1>
+      <p class="sub">Masuk sebagai <strong id="whoami-username"></strong></p>
+    </div>
+    <div class="row" style="flex:0 0 auto; gap:8px;">
+      <button class="btn-secondary btn-small" id="btn-add-app">+ Tambah App</button>
+      <button class="btn-danger btn-small" id="btn-logout">Keluar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>App</th>
+          <th>Subscriber</th>
+          <th>API Key</th>
+          <th>VAPID Public Key</th>
+          <th>Dibuat</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="apps-tbody"></tbody>
+    </table>
+    <p class="sub" id="apps-empty" style="margin-top:16px;">Belum ada app terdaftar.</p>
+  </div>
+</div>
+
+<!-- Add app modal -->
+<div id="modal-add-app" class="modal-backdrop hidden">
+  <div class="modal">
+    <h1 style="font-size:16px;">Tambah App Baru</h1>
+    <label for="add-slug">Slug</label>
+    <input id="add-slug" placeholder="riwariwi" />
+    <div class="hint">huruf kecil, angka, strip. Dipakai frontend untuk identifikasi app.</div>
+    <label for="add-name">Nama</label>
+    <input id="add-name" placeholder="Riwariwi" />
+    <label for="add-subject">VAPID Subject (email kontak)</label>
+    <input id="add-subject" placeholder="mailto:fika@briix.co.id" />
+    <div class="row" style="margin-top:20px;">
+      <button class="btn-secondary" id="add-app-cancel">Batal</button>
+      <button class="btn-primary" id="add-app-submit" style="margin-top:0;">Simpan</button>
+    </div>
+    <div class="error" id="add-app-error"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function show(id) { $(id).classList.remove('hidden'); }
+function hide(id) { $(id).classList.add('hidden'); }
+function showOnly(id) {
+  ['view-login', 'view-totp-setup', 'view-dashboard'].forEach(v => v === id ? show(v) : hide(v));
+}
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+function copyText(text) {
+  navigator.clipboard?.writeText(text).then(() => toast('Disalin ke clipboard'));
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+async function init() {
+  try {
+    const me = await api('/admin/whoami');
+    $('whoami-username').textContent = me.username;
+    showOnly('view-dashboard');
+    loadApps();
+  } catch {
+    showOnly('view-login');
+  }
+}
+
+// --- Login ---
+$('login-submit').addEventListener('click', async () => {
+  $('login-error').textContent = '';
+  const body = {
+    username: $('login-username').value.trim(),
+    password: $('login-password').value,
+  };
+  if (!$('login-totp-field').classList.contains('hidden')) {
+    body.totp_code = $('login-totp').value.trim();
+  }
+  try {
+    const res = await api('/admin/login', { method: 'POST', body });
+    if (res.status === 'totp_setup_required') {
+      $('totp-qr').src = 'data:image/png;base64,' + res.qr_png_base64;
+      $('totp-secret').textContent = res.secret;
+      showOnly('view-totp-setup');
+      return;
+    }
+    $('whoami-username').textContent = body.username;
+    showOnly('view-dashboard');
+    loadApps();
+  } catch (e) {
+    if (String(e.message).toLowerCase().includes('totp')) {
+      show('login-totp-field');
+    }
+    $('login-error').textContent = e.message;
+  }
+});
+
+// --- TOTP enrollment confirm ---
+$('totp-confirm-submit').addEventListener('click', async () => {
+  $('totp-setup-error').textContent = '';
+  try {
+    await api('/admin/totp/confirm', { method: 'POST', body: { code: $('totp-confirm-code').value.trim() } });
+    $('whoami-username').textContent = $('login-username').value.trim();
+    showOnly('view-dashboard');
+    loadApps();
+  } catch (e) {
+    $('totp-setup-error').textContent = e.message;
+  }
+});
+
+// --- Logout ---
+$('btn-logout').addEventListener('click', async () => {
+  await api('/admin/logout', { method: 'POST' });
+  location.reload();
+});
+
+// --- Dashboard: load & render apps ---
+async function loadApps() {
+  const apps = await api('/admin/apps');
+  const tbody = $('apps-tbody');
+  tbody.innerHTML = '';
+  $('apps-empty').classList.toggle('hidden', apps.length > 0);
+  for (const app of apps) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${app.name}</strong><br><span class="pill">${app.slug}</span></td>
+      <td>${app.subscriber_count}</td>
+      <td><code class="key" title="Klik untuk salin">${app.api_key.slice(0,14)}…</code></td>
+      <td><code class="key" title="Klik untuk salin">${app.vapid_public_key.slice(0,14)}…</code></td>
+      <td>${app.created_at}</td>
+      <td><button class="btn-secondary btn-small" data-slug="${app.slug}">Regenerate Key</button></td>
+    `;
+    tr.querySelectorAll('code.key')[0].addEventListener('click', () => copyText(app.api_key));
+    tr.querySelectorAll('code.key')[1].addEventListener('click', () => copyText(app.vapid_public_key));
+    tr.querySelector('button[data-slug]').addEventListener('click', () => regenerateKey(app.slug));
+    tbody.appendChild(tr);
+  }
+}
+
+async function regenerateKey(slug) {
+  if (!confirm(`Regenerate API key untuk "${slug}"? Key lama langsung tidak berlaku — backend app ini harus di-update.`)) return;
+  try {
+    const res = await api(`/admin/apps/${slug}/regenerate-key`, { method: 'POST' });
+    copyText(res.api_key);
+    toast('API key baru disalin ke clipboard');
+    loadApps();
+  } catch (e) {
+    toast('Gagal: ' + e.message);
+  }
+}
+
+// --- Add app modal ---
+$('btn-add-app').addEventListener('click', () => show('modal-add-app'));
+$('add-app-cancel').addEventListener('click', () => hide('modal-add-app'));
+$('add-app-submit').addEventListener('click', async () => {
+  $('add-app-error').textContent = '';
+  const body = {
+    slug: $('add-slug').value.trim().toLowerCase(),
+    name: $('add-name').value.trim(),
+    vapid_subject: $('add-subject').value.trim(),
+  };
+  try {
+    const res = await api('/admin/apps', { method: 'POST', body });
+    hide('modal-add-app');
+    $('add-slug').value = ''; $('add-name').value = ''; $('add-subject').value = '';
+    copyText(res.api_key);
+    toast(`App "${res.slug}" dibuat — API key disalin ke clipboard`);
+    loadApps();
+  } catch (e) {
+    $('add-app-error').textContent = e.message;
+  }
+});
+
+init();
+</script>
+</body>
+</html>

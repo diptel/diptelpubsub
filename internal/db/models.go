@@ -14,6 +14,24 @@ type App struct {
 	UpdatedAt       time.Time
 }
 
+type AdminUser struct {
+	ID           string
+	Username     string
+	PasswordHash string
+	TOTPSecret   *string
+	TOTPEnabled  bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type AdminSession struct {
+	Token       string
+	AdminUserID string
+	PendingTOTP bool
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
+}
+
 type Subscription struct {
 	ID         string
 	AppID      string

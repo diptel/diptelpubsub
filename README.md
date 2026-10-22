@@ -13,27 +13,29 @@ panggil API ini untuk subscribe dan kirim notifikasi — tidak perlu implement W
 Browser (PWA riwariwi/briixbroadband/dll)
    │  subscribe via PushManager
    ▼
-PushHub  ── /vapid-public-key  (public, by app slug)
-         ── /subscribe         (public, by app slug)
-         ── /unsubscribe       (public, by app slug)
-         ── /send              (tenant-auth via X-API-Key)   ◄── dipanggil backend tiap app
-         ── /admin/apps        (admin-auth via ADMIN_TOKEN)  ◄── daftarkan app baru
+PushHub  ── /vapid-public-key     (public, by app slug)
+         ── /subscribe            (public, by app slug)
+         ── /unsubscribe          (public, by app slug)
+         ── /send                 (tenant-auth via X-API-Key)      ◄── dipanggil backend tiap app
+         ── /admin/apps           (admin-auth: session atau ADMIN_TOKEN)
+         ── /panel/                (web panel: login + TOTP, kelola app)
    │
    ▼
-Postgres (apps, subscriptions, notifications_log)
+Postgres (apps, subscriptions, notifications_log, admin_users, admin_sessions)
 ```
 
 - **Frontend** tiap app memanggil `/vapid-public-key`, `/subscribe`, `/unsubscribe` langsung —
   tidak butuh API key (publik, diidentifikasi lewat `app` slug).
 - **Backend** tiap app memanggil `/send` dengan header `X-API-Key` miliknya sendiri saat mau
   mengirim notifikasi (order berubah status, promo, dll).
-- **Admin** (kamu) memanggil `/admin/apps` sekali untuk mendaftarkan app baru dan mendapatkan
-  API key + VAPID public key-nya.
+- **Admin** (kamu) daftarkan app baru lewat **web panel di `/panel/`** (login username/password
+  + kode authenticator), atau lewat `/admin/apps` pakai `ADMIN_TOKEN` untuk automasi/curl.
 
 ## Menjalankan (deploy ke server, mis. 1Panel Pro)
 
-1. Copy `.env.example` jadi `.env`, isi `POSTGRES_PASSWORD` dan `ADMIN_TOKEN` dengan nilai acak
-   yang kuat.
+1. Copy `.env.example` jadi `.env`, isi `POSTGRES_PASSWORD`, `ADMIN_TOKEN`, dan
+   `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` (akun admin pertama untuk login ke
+   panel) dengan nilai yang kuat.
 2. Jalankan:
    ```sh
    docker compose up -d --build
@@ -43,8 +45,44 @@ Postgres (apps, subscriptions, notifications_log)
    curl http://localhost:8080/healthz
    ```
 
-Migrasi SQL di `migrations/0001_init.sql` otomatis dijalankan oleh image Postgres resmi saat
-volume database masih kosong (lewat `docker-entrypoint-initdb.d`).
+Migrasi SQL di folder `migrations/` otomatis dijalankan **hanya saat volume database masih
+kosong** (lewat `docker-entrypoint-initdb.d` milik image Postgres resmi). Untuk deployment yang
+sudah pernah jalan sebelum tabel admin (`admin_users`, `admin_sessions`) ditambahkan, migrasi
+baru harus dijalankan manual sekali:
+
+```sh
+docker compose exec -T postgres psql -U pushhub -d pushhub < migrations/0002_admin_auth.sql
+```
+
+## Web panel admin (login username/password + TOTP)
+
+Setelah service jalan, buka `http://<host>:<port>/panel/` di browser.
+
+**Login pertama kali:**
+1. Masukkan username & password dari `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`.
+2. Karena TOTP belum aktif, panel langsung menampilkan **QR code** — scan pakai Google
+   Authenticator / Authy / 1Password (app apa saja yang support TOTP standar).
+3. Masukkan kode 6 digit dari app tersebut untuk konfirmasi. Setelah ini, TOTP wajib dipakai
+   setiap login berikutnya.
+
+**Login berikutnya:** username + password + kode 6 digit dari authenticator — sama seperti 2FA
+pada umumnya.
+
+**Dari dashboard panel, kamu bisa:**
+- Tambah app/tenant baru (slug, nama, VAPID subject) — API key langsung disalin ke clipboard.
+- Lihat semua app yang terdaftar beserta jumlah subscriber-nya.
+- Regenerate API key suatu app (kalau key lama bocor/perlu diganti).
+
+**Catatan keamanan:**
+- `ADMIN_BOOTSTRAP_USERNAME`/`ADMIN_BOOTSTRAP_PASSWORD` di `.env` hanya dipakai **sekali** saat
+  tabel admin masih kosong — setelah akun pertama berhasil dibuat, dua baris ini boleh dihapus
+  dari `.env` (tidak akan dipakai lagi, dan tidak akan membuat akun kedua).
+- Kalau PushHub nanti diakses lewat domain + HTTPS (bukan cuma IP LAN), set `COOKIE_SECURE=true`
+  di `.env`. Selama masih akses lewat IP + HTTP biasa (seperti setup kamu sekarang), biarkan
+  `false` — kalau diset `true` di HTTP biasa, browser akan menolak kirim cookie session dan
+  login akan terasa gagal terus padahal password benar.
+- `/send` dan endpoint `/admin/*` tidak pernah dipanggil dari frontend app lain, jadi aman walau
+  server ini diakses dari LAN tanpa HTTPS untuk sementara.
 
 ## Auto-deploy saat push ke GitHub
 
@@ -84,7 +122,10 @@ cat ~/.ssh/github_deploy          # isi ini ke secret DEPLOY_SSH_KEY
 
 ## Mendaftarkan app baru (tenant)
 
-Tiap project (riwariwi, briixbroadband, briix-capital, kasir, ...) didaftarkan sekali:
+**Cara termudah: lewat web panel** (`/panel/` → tombol "+ Tambah App") — lihat bagian di atas.
+
+**Cara lewat API** (untuk automasi/CI, pakai `ADMIN_TOKEN`), tiap project (riwariwi,
+briixbroadband, briix-capital, kasir, ...) didaftarkan sekali:
 
 ```sh
 curl -X POST http://localhost:8080/admin/apps \
@@ -160,9 +201,23 @@ atau untuk broadcast ke semua subscriber app ini:
 Subscription yang sudah kadaluarsa (endpoint dihapus browser) otomatis dibersihkan dari
 database saat pengiriman gagal dengan status 404/410 dari push service.
 
-### `POST /admin/apps`
-Butuh header `Authorization: Bearer <ADMIN_TOKEN>`. Mendaftarkan app/tenant baru, generate
-VAPID keypair dan API key baru.
+### Endpoint admin (butuh session panel yang sudah login, ATAU header `Authorization: Bearer <ADMIN_TOKEN>`)
+
+- `GET /admin/apps` — daftar semua app terdaftar (termasuk API key & jumlah subscriber).
+- `POST /admin/apps` — daftarkan app/tenant baru, generate VAPID keypair dan API key baru. Body:
+  ```json
+  { "slug": "riwariwi", "name": "Riwariwi", "vapid_subject": "mailto:fika@briix.co.id" }
+  ```
+- `POST /admin/apps/<slug>/regenerate-key` — ganti API key suatu app (key lama langsung tidak
+  berlaku).
+
+### Endpoint login panel (publik — ini memang cara otentikasi)
+
+- `POST /admin/login` — body `{ "username", "password", "totp_code"? }`. Kalau TOTP belum
+  diaktifkan, respons berisi QR code (`qr_png_base64`) untuk enrollment, bukan sesi penuh.
+- `POST /admin/totp/confirm` — body `{ "code" }`. Konfirmasi kode pertama untuk mengaktifkan TOTP.
+- `POST /admin/logout` — hapus sesi.
+- `GET /admin/whoami` — butuh sesi aktif; dipakai panel untuk cek status login.
 
 ## Catatan teknis
 
@@ -181,12 +236,15 @@ VAPID keypair dan API key baru.
 ## Struktur project
 
 ```
-cmd/server/main.go        - entrypoint, routing
-internal/config/          - load env var
-internal/db/              - koneksi Postgres + query (apps, subscriptions, notifications_log)
-internal/push/            - generate VAPID key, kirim Web Push
-internal/middleware/      - auth (X-API-Key per tenant, admin token)
-internal/handlers/        - HTTP handlers
-migrations/0001_init.sql  - skema database
-examples/                 - contoh integrasi frontend & backend
+cmd/server/main.go          - entrypoint, routing, bootstrap akun admin pertama
+internal/config/            - load env var
+internal/db/                - koneksi Postgres + query (apps, subscriptions, notifications_log, admin_users, admin_sessions)
+internal/push/               - generate VAPID key, kirim Web Push
+internal/auth/                - bcrypt password hashing, generate/validasi TOTP, render QR code
+internal/middleware/         - auth (X-API-Key per tenant, admin token, session cookie panel)
+internal/handlers/           - HTTP handlers
+internal/panel/               - web panel admin (HTML/CSS/JS di-embed ke binary Go)
+migrations/0001_init.sql     - skema database inti
+migrations/0002_admin_auth.sql - skema admin_users & admin_sessions
+examples/                    - contoh integrasi frontend & backend
 ```
