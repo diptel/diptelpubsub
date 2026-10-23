@@ -199,17 +199,28 @@ Lihat folder `examples/`:
 
 - `examples/service-worker.js` — pasang sebagai `/sw.js` di tiap PWA.
 - `examples/frontend-subscribe.js` — kode subscribe/unsubscribe di frontend.
-- `examples/backend-send-go.go` — contoh kirim notifikasi dari backend Go.
-- `examples/backend-send-curl.sh` — contoh kirim lewat curl / n8n HTTP Request node.
+- `examples/backend-send-go.go` — contoh kirim push notification dari backend Go.
+- `examples/backend-send-curl.sh` — contoh kirim push lewat curl / n8n HTTP Request node.
+- `examples/backend-send-wa-go.go` — contoh kirim WhatsApp (`/send/wa`) dari backend Go, termasuk
+  pembedaan kategori `otp` vs `general`.
+- `examples/backend-send-wa-curl.sh` — contoh kirim WhatsApp lewat curl / n8n HTTP Request node.
 
 Alur integrasi tiap app baru:
 
-1. Daftar app lewat `/admin/apps` → dapat `api_key`.
-2. Pasang `examples/service-worker.js` sebagai `/sw.js`.
-3. Panggil `enablePushNotifications()` dari `examples/frontend-subscribe.js` saat user
-   mengaktifkan notifikasi (ganti `APP_SLUG` dan `PUSHHUB_URL`).
-4. Di backend app tersebut, panggil `POST /send` dengan `X-API-Key` saat ada event yang perlu
-   dikirim notifikasi (lihat `examples/backend-send-go.go`).
+1. Daftar app lewat `/admin/apps` (atau panel) → dapat `api_key`. Satu `api_key` ini dipakai
+   untuk ketiga channel (Push, WhatsApp, Email) — tidak perlu daftar/token terpisah per channel.
+2. **Push (opsional)**: pasang `examples/service-worker.js` sebagai `/sw.js`, lalu panggil
+   `enablePushNotifications()` dari `examples/frontend-subscribe.js` saat user mengaktifkan
+   notifikasi (ganti `APP_SLUG` dan `PUSHHUB_URL`). Di backend, panggil `POST /send` dengan
+   `X-API-Key` saat ada event yang perlu dikirim (lihat `examples/backend-send-go.go`).
+3. **WhatsApp (opsional)**: langsung panggil `POST /send/wa` dengan `X-API-Key` dari backend
+   app, tidak perlu setup frontend apapun (lihat `examples/backend-send-wa-go.go` /
+   `backend-send-wa-curl.sh`). Pakai `"category": "otp"` untuk kode verifikasi/transaksional,
+   `"category": "general"` untuk notifikasi order/promo/CS. Kalau mau balasan WA pelanggan
+   diteruskan ke sistem app ini (misal flow n8n), set `webhook_url` app ini lewat tab "Apps" di
+   panel atau `POST /admin/apps/<slug>/webhook`.
+4. **Email (opsional)**: panggil `POST /send/email` dengan `X-API-Key`, sama seperti WhatsApp —
+   tidak butuh setup SMTP sendiri, memakai akun SMTP hub.
 
 ## API Reference
 
