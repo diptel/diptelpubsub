@@ -15,6 +15,14 @@ type Config struct {
 	AdminBootstrapPassword string
 	TOTPIssuer             string // shown in the authenticator app, e.g. "PushHub"
 	CookieSecure           bool   // set true once served over HTTPS; false is required for plain-HTTP LAN testing
+
+	// Email channel: one hub-level SMTP account shared across all tenants (SMTP_* env vars).
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPFromName string
 }
 
 func Load() Config {
@@ -26,6 +34,13 @@ func Load() Config {
 		AdminBootstrapPassword: getEnv("ADMIN_BOOTSTRAP_PASSWORD", ""),
 		TOTPIssuer:             getEnv("TOTP_ISSUER", "PushHub"),
 		CookieSecure:           getEnv("COOKIE_SECURE", "false") == "true",
+
+		SMTPHost:     getEnv("SMTP_HOST", ""),
+		SMTPPort:     getEnv("SMTP_PORT", "587"),
+		SMTPUsername: getEnv("SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("SMTP_FROM", ""),
+		SMTPFromName: getEnv("SMTP_FROM_NAME", "Notification Hub"),
 	}
 }
 

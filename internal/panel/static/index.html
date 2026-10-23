@@ -25,9 +25,10 @@
     background: var(--bg);
     color: var(--text);
   }
-  .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
   .center-wrap { max-width: 380px; margin: 10vh auto 0; padding: 0 20px; }
   h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
   .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
   .card {
     background: var(--panel);
@@ -36,7 +37,7 @@
     padding: 24px;
   }
   label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
-  input {
+  input, select, textarea {
     width: 100%;
     padding: 10px 12px;
     background: var(--panel-2);
@@ -44,8 +45,9 @@
     border-radius: 8px;
     color: var(--text);
     font-size: 14px;
+    font-family: inherit;
   }
-  input:focus { outline: none; border-color: var(--accent); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
   button {
     cursor: pointer;
     border: none;
@@ -88,11 +90,13 @@
     position: fixed; inset: 0; background: rgba(0,0,0,.6);
     display: flex; align-items: center; justify-content: center; z-index: 10;
   }
-  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 360px; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 380px; max-height: 85vh; overflow-y: auto; }
   .hidden { display: none !important; }
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; }
   .pill { font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 8px; color: var(--muted); }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.danger { color: var(--danger); border-color: var(--danger); }
   .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
   .toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -100,6 +104,16 @@
     opacity: 0; transition: opacity .2s;
   }
   .toast.show { opacity: 1; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    background: transparent; border: none; border-radius: 0; color: var(--muted);
+    padding: 10px 4px; margin-right: 20px; font-weight: 500; border-bottom: 2px solid transparent;
+  }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, monospace; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -107,7 +121,7 @@
 <!-- Login screen -->
 <div id="view-login" class="center-wrap hidden">
   <h1>PushHub Admin</h1>
-  <p class="sub">Masuk untuk mengelola app/tenant push notification.</p>
+  <p class="sub">Masuk untuk mengelola app/tenant notification hub.</p>
   <div class="card">
     <label for="login-username">Username</label>
     <input id="login-username" autocomplete="username" />
@@ -145,26 +159,115 @@
       <p class="sub">Masuk sebagai <strong id="whoami-username"></strong></p>
     </div>
     <div class="row" style="flex:0 0 auto; gap:8px;">
-      <button class="btn-secondary btn-small" id="btn-add-app">+ Tambah App</button>
       <button class="btn-danger btn-small" id="btn-logout">Keluar</button>
     </div>
   </div>
 
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th>App</th>
-          <th>Subscriber</th>
-          <th>API Key</th>
-          <th>VAPID Public Key</th>
-          <th>Dibuat</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="apps-tbody"></tbody>
-    </table>
-    <p class="sub" id="apps-empty" style="margin-top:16px;">Belum ada app terdaftar.</p>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="tab-apps">Apps</button>
+    <button class="tab-btn" data-tab="tab-wa-numbers">Nomor WA</button>
+    <button class="tab-btn" data-tab="tab-wa-messages">Log WhatsApp</button>
+    <button class="tab-btn" data-tab="tab-email-messages">Log Email</button>
+  </div>
+
+  <!-- Apps tab -->
+  <div id="tab-apps" class="tab-panel active">
+    <div class="card">
+      <div class="topbar" style="margin-bottom:12px;">
+        <h2 style="margin:0;">Apps / Tenant</h2>
+        <button class="btn-secondary btn-small" id="btn-add-app">+ Tambah App</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>App</th>
+            <th>Subscriber</th>
+            <th>API Key</th>
+            <th>VAPID Public Key</th>
+            <th>Webhook WA Masuk</th>
+            <th>Dibuat</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="apps-tbody"></tbody>
+      </table>
+      <p class="sub" id="apps-empty" style="margin-top:16px;">Belum ada app terdaftar.</p>
+    </div>
+  </div>
+
+  <!-- WA numbers tab -->
+  <div id="tab-wa-numbers" class="tab-panel">
+    <div class="card">
+      <div class="topbar" style="margin-bottom:12px;">
+        <h2 style="margin:0;">Nomor WhatsApp (Fonnte)</h2>
+        <button class="btn-secondary btn-small" id="btn-add-wa-number">+ Tambah Nomor</button>
+      </div>
+      <p class="sub" style="margin:0 0 12px;">Nomor ini dipakai bersama oleh semua app. Kategori "otp" dipisah dari "general" supaya nomor OTP tidak ikut kena resiko blokir karena broadcast/promo.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>No. HP</th>
+            <th>Kategori</th>
+            <th>Prioritas</th>
+            <th>Min. interval</th>
+            <th>Status</th>
+            <th>Webhook masuk (Fonnte)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="wa-numbers-tbody"></tbody>
+      </table>
+      <p class="sub" id="wa-numbers-empty" style="margin-top:16px;">Belum ada nomor WA terdaftar.</p>
+    </div>
+  </div>
+
+  <!-- WA messages tab -->
+  <div id="tab-wa-messages" class="tab-panel">
+    <div class="card">
+      <div class="topbar" style="margin-bottom:12px;">
+        <h2 style="margin:0;">Log WhatsApp (200 terbaru)</h2>
+        <button class="btn-secondary btn-small" id="btn-refresh-wa-messages">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Arah</th>
+            <th>Telepon</th>
+            <th>App</th>
+            <th>Kategori</th>
+            <th>Pesan</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="wa-messages-tbody"></tbody>
+      </table>
+      <p class="sub" id="wa-messages-empty" style="margin-top:16px;">Belum ada pesan WhatsApp.</p>
+    </div>
+  </div>
+
+  <!-- Email messages tab -->
+  <div id="tab-email-messages" class="tab-panel">
+    <div class="card">
+      <div class="topbar" style="margin-bottom:12px;">
+        <h2 style="margin:0;">Log Email (200 terbaru)</h2>
+        <button class="btn-secondary btn-small" id="btn-refresh-email-messages">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>App</th>
+            <th>Ke</th>
+            <th>Subjek</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="email-messages-tbody"></tbody>
+      </table>
+      <p class="sub" id="email-messages-empty" style="margin-top:16px;">Belum ada email terkirim.</p>
+    </div>
   </div>
 </div>
 
@@ -179,11 +282,62 @@
     <input id="add-name" placeholder="Riwariwi" />
     <label for="add-subject">VAPID Subject (email kontak)</label>
     <input id="add-subject" placeholder="mailto:fika@briix.co.id" />
+    <label for="add-webhook">Webhook WA Masuk (opsional)</label>
+    <input id="add-webhook" placeholder="https://n8n.example.com/webhook/riwariwi-wa" />
+    <div class="hint">URL ini dipanggil saat ada balasan WhatsApp dari nomor yang baru saja dihubungi app ini (misal flow n8n).</div>
     <div class="row" style="margin-top:20px;">
       <button class="btn-secondary" id="add-app-cancel">Batal</button>
       <button class="btn-primary" id="add-app-submit" style="margin-top:0;">Simpan</button>
     </div>
     <div class="error" id="add-app-error"></div>
+  </div>
+</div>
+
+<!-- Edit app webhook modal -->
+<div id="modal-edit-webhook" class="modal-backdrop hidden">
+  <div class="modal">
+    <h1 style="font-size:16px;">Webhook WA Masuk — <span id="edit-webhook-slug" class="mono"></span></h1>
+    <label for="edit-webhook-url">URL Webhook</label>
+    <input id="edit-webhook-url" placeholder="https://n8n.example.com/webhook/riwariwi-wa" />
+    <div class="hint">Kosongkan untuk menghapus webhook (balasan WA tetap tercatat di log, hanya tidak diteruskan).</div>
+    <div class="row" style="margin-top:20px;">
+      <button class="btn-secondary" id="edit-webhook-cancel">Batal</button>
+      <button class="btn-primary" id="edit-webhook-submit" style="margin-top:0;">Simpan</button>
+    </div>
+    <div class="error" id="edit-webhook-error"></div>
+  </div>
+</div>
+
+<!-- Add WA number modal -->
+<div id="modal-add-wa-number" class="modal-backdrop hidden">
+  <div class="modal">
+    <h1 style="font-size:16px;">Tambah Nomor WA</h1>
+    <label for="wa-label">Label</label>
+    <input id="wa-label" placeholder="WA Utama OTP" />
+    <label for="wa-phone">No. HP (opsional, untuk catatan)</label>
+    <input id="wa-phone" placeholder="6281234567890" />
+    <label for="wa-token">Fonnte Token</label>
+    <input id="wa-token" placeholder="token dari dashboard Fonnte" />
+    <label for="wa-category">Kategori</label>
+    <select id="wa-category">
+      <option value="otp">otp — khusus OTP/transaksional</option>
+      <option value="general">general — notifikasi/promo/CS</option>
+    </select>
+    <div class="row">
+      <div>
+        <label for="wa-priority">Prioritas (lebih kecil = diutamakan)</label>
+        <input id="wa-priority" type="number" value="100" />
+      </div>
+      <div>
+        <label for="wa-interval">Min. interval kirim (ms)</label>
+        <input id="wa-interval" type="number" value="2000" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:20px;">
+      <button class="btn-secondary" id="add-wa-number-cancel">Batal</button>
+      <button class="btn-primary" id="add-wa-number-submit" style="margin-top:0;">Simpan</button>
+    </div>
+    <div class="error" id="add-wa-number-error"></div>
   </div>
 </div>
 
@@ -205,6 +359,9 @@ function toast(msg) {
 function copyText(text) {
   navigator.clipboard?.writeText(text).then(() => toast('Disalin ke clipboard'));
 }
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -224,6 +381,7 @@ async function init() {
     $('whoami-username').textContent = me.username;
     showOnly('view-dashboard');
     loadApps();
+    loadWANumbers();
   } catch {
     showOnly('view-login');
   }
@@ -250,6 +408,7 @@ $('login-submit').addEventListener('click', async () => {
     $('whoami-username').textContent = body.username;
     showOnly('view-dashboard');
     loadApps();
+    loadWANumbers();
   } catch (e) {
     if (String(e.message).toLowerCase().includes('totp')) {
       show('login-totp-field');
@@ -266,6 +425,7 @@ $('totp-confirm-submit').addEventListener('click', async () => {
     $('whoami-username').textContent = $('login-username').value.trim();
     showOnly('view-dashboard');
     loadApps();
+    loadWANumbers();
   } catch (e) {
     $('totp-setup-error').textContent = e.message;
   }
@@ -277,6 +437,19 @@ $('btn-logout').addEventListener('click', async () => {
   location.reload();
 });
 
+// --- Tabs ---
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    $(btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'tab-wa-messages') loadWAMessages();
+    if (btn.dataset.tab === 'tab-email-messages') loadEmailMessages();
+    if (btn.dataset.tab === 'tab-wa-numbers') loadWANumbers();
+  });
+});
+
 // --- Dashboard: load & render apps ---
 async function loadApps() {
   const apps = await api('/admin/apps');
@@ -285,17 +458,25 @@ async function loadApps() {
   $('apps-empty').classList.toggle('hidden', apps.length > 0);
   for (const app of apps) {
     const tr = document.createElement('tr');
+    const webhookLabel = app.webhook_url
+      ? `<span class="mono" title="${escapeHtml(app.webhook_url)}">${escapeHtml(app.webhook_url.slice(0, 28))}${app.webhook_url.length > 28 ? '…' : ''}</span>`
+      : '<span class="muted">—</span>';
     tr.innerHTML = `
-      <td><strong>${app.name}</strong><br><span class="pill">${app.slug}</span></td>
+      <td><strong>${escapeHtml(app.name)}</strong><br><span class="pill">${escapeHtml(app.slug)}</span></td>
       <td>${app.subscriber_count}</td>
-      <td><code class="key" title="Klik untuk salin">${app.api_key.slice(0,14)}…</code></td>
-      <td><code class="key" title="Klik untuk salin">${app.vapid_public_key.slice(0,14)}…</code></td>
-      <td>${app.created_at}</td>
-      <td><button class="btn-secondary btn-small" data-slug="${app.slug}">Regenerate Key</button></td>
+      <td><code class="key" title="Klik untuk salin">${escapeHtml(app.api_key.slice(0,14))}…</code></td>
+      <td><code class="key" title="Klik untuk salin">${escapeHtml(app.vapid_public_key.slice(0,14))}…</code></td>
+      <td>${webhookLabel}</td>
+      <td>${escapeHtml(app.created_at)}</td>
+      <td>
+        <button class="btn-secondary btn-small" data-action="webhook" data-slug="${escapeHtml(app.slug)}" data-webhook="${escapeHtml(app.webhook_url || '')}">Webhook</button>
+        <button class="btn-secondary btn-small" data-action="regen" data-slug="${escapeHtml(app.slug)}">Regenerate Key</button>
+      </td>
     `;
     tr.querySelectorAll('code.key')[0].addEventListener('click', () => copyText(app.api_key));
     tr.querySelectorAll('code.key')[1].addEventListener('click', () => copyText(app.vapid_public_key));
-    tr.querySelector('button[data-slug]').addEventListener('click', () => regenerateKey(app.slug));
+    tr.querySelector('button[data-action="regen"]').addEventListener('click', () => regenerateKey(app.slug));
+    tr.querySelector('button[data-action="webhook"]').addEventListener('click', () => openEditWebhook(app.slug, app.webhook_url || ''));
     tbody.appendChild(tr);
   }
 }
@@ -321,11 +502,12 @@ $('add-app-submit').addEventListener('click', async () => {
     slug: $('add-slug').value.trim().toLowerCase(),
     name: $('add-name').value.trim(),
     vapid_subject: $('add-subject').value.trim(),
+    webhook_url: $('add-webhook').value.trim(),
   };
   try {
     const res = await api('/admin/apps', { method: 'POST', body });
     hide('modal-add-app');
-    $('add-slug').value = ''; $('add-name').value = ''; $('add-subject').value = '';
+    $('add-slug').value = ''; $('add-name').value = ''; $('add-subject').value = ''; $('add-webhook').value = '';
     copyText(res.api_key);
     toast(`App "${res.slug}" dibuat — API key disalin ke clipboard`);
     loadApps();
@@ -333,6 +515,156 @@ $('add-app-submit').addEventListener('click', async () => {
     $('add-app-error').textContent = e.message;
   }
 });
+
+// --- Edit app webhook modal ---
+let editWebhookSlug = null;
+function openEditWebhook(slug, currentURL) {
+  editWebhookSlug = slug;
+  $('edit-webhook-slug').textContent = slug;
+  $('edit-webhook-url').value = currentURL;
+  $('edit-webhook-error').textContent = '';
+  show('modal-edit-webhook');
+}
+$('edit-webhook-cancel').addEventListener('click', () => hide('modal-edit-webhook'));
+$('edit-webhook-submit').addEventListener('click', async () => {
+  $('edit-webhook-error').textContent = '';
+  try {
+    await api(`/admin/apps/${editWebhookSlug}/webhook`, { method: 'POST', body: { webhook_url: $('edit-webhook-url').value.trim() } });
+    hide('modal-edit-webhook');
+    toast('Webhook disimpan');
+    loadApps();
+  } catch (e) {
+    $('edit-webhook-error').textContent = e.message;
+  }
+});
+
+// --- WA numbers ---
+async function loadWANumbers() {
+  const numbers = await api('/admin/wa-numbers');
+  const tbody = $('wa-numbers-tbody');
+  tbody.innerHTML = '';
+  $('wa-numbers-empty').classList.toggle('hidden', numbers.length > 0);
+  for (const n of numbers) {
+    const tr = document.createElement('tr');
+    const statusPill = n.active ? '<span class="pill ok">aktif</span>' : '<span class="pill danger">nonaktif</span>';
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(n.label)}</strong></td>
+      <td>${escapeHtml(n.phone_number || '—')}</td>
+      <td><span class="pill">${escapeHtml(n.category)}</span></td>
+      <td>${n.priority}</td>
+      <td>${n.min_interval_ms} ms</td>
+      <td>${statusPill}</td>
+      <td><span class="mono">/webhook/fonnte/${escapeHtml(n.id)}</span> <button class="btn-secondary btn-small" data-action="copy-webhook" data-id="${escapeHtml(n.id)}">Salin URL</button></td>
+      <td>
+        <button class="btn-secondary btn-small" data-action="toggle" data-id="${escapeHtml(n.id)}" data-active="${n.active}">${n.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
+        <button class="btn-danger btn-small" data-action="delete" data-id="${escapeHtml(n.id)}">Hapus</button>
+      </td>
+    `;
+    tr.querySelector('button[data-action="toggle"]').addEventListener('click', () => toggleWANumber(n.id, !n.active));
+    tr.querySelector('button[data-action="delete"]').addEventListener('click', () => deleteWANumber(n.id, n.label));
+    tr.querySelector('button[data-action="copy-webhook"]').addEventListener('click', () => {
+      copyText(location.origin + '/webhook/fonnte/' + n.id);
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+async function toggleWANumber(id, active) {
+  try {
+    await api(`/admin/wa-numbers/${id}/toggle`, { method: 'POST', body: { active } });
+    toast(active ? 'Nomor diaktifkan' : 'Nomor dinonaktifkan');
+    loadWANumbers();
+  } catch (e) {
+    toast('Gagal: ' + e.message);
+  }
+}
+
+async function deleteWANumber(id, label) {
+  if (!confirm(`Hapus nomor WA "${label}"? Riwayat pesan terkait tetap tersimpan.`)) return;
+  try {
+    await api(`/admin/wa-numbers/${id}`, { method: 'DELETE' });
+    toast('Nomor dihapus');
+    loadWANumbers();
+  } catch (e) {
+    toast('Gagal: ' + e.message);
+  }
+}
+
+$('btn-add-wa-number').addEventListener('click', () => {
+  $('add-wa-number-error').textContent = '';
+  show('modal-add-wa-number');
+});
+$('add-wa-number-cancel').addEventListener('click', () => hide('modal-add-wa-number'));
+$('add-wa-number-submit').addEventListener('click', async () => {
+  $('add-wa-number-error').textContent = '';
+  const body = {
+    label: $('wa-label').value.trim(),
+    phone_number: $('wa-phone').value.trim(),
+    fonnte_token: $('wa-token').value.trim(),
+    category: $('wa-category').value,
+    priority: parseInt($('wa-priority').value, 10) || 100,
+    min_interval_ms: parseInt($('wa-interval').value, 10) || 2000,
+  };
+  try {
+    await api('/admin/wa-numbers', { method: 'POST', body });
+    hide('modal-add-wa-number');
+    $('wa-label').value = ''; $('wa-phone').value = ''; $('wa-token').value = '';
+    $('wa-priority').value = '100'; $('wa-interval').value = '2000';
+    toast('Nomor WA ditambahkan — jangan lupa set webhook URL-nya di dashboard Fonnte');
+    loadWANumbers();
+  } catch (e) {
+    $('add-wa-number-error').textContent = e.message;
+  }
+});
+
+// --- WA messages log ---
+async function loadWAMessages() {
+  const msgs = await api('/admin/wa-messages');
+  const tbody = $('wa-messages-tbody');
+  tbody.innerHTML = '';
+  $('wa-messages-empty').classList.toggle('hidden', msgs.length > 0);
+  for (const m of msgs) {
+    const tr = document.createElement('tr');
+    const dirPill = m.direction === 'in' ? '<span class="pill">masuk</span>' : '<span class="pill">keluar</span>';
+    const statusPill = m.status === 'sent' || m.status === 'received'
+      ? `<span class="pill ok">${escapeHtml(m.status)}</span>`
+      : `<span class="pill danger" title="${escapeHtml(m.error || '')}">${escapeHtml(m.status)}</span>`;
+    tr.innerHTML = `
+      <td>${escapeHtml(m.created_at)}</td>
+      <td>${dirPill}</td>
+      <td>${escapeHtml(m.phone)}</td>
+      <td>${m.app_id ? `<span class="mono">${escapeHtml(m.app_id.slice(0,8))}…</span>` : '<span class="muted">—</span>'}</td>
+      <td>${escapeHtml(m.category || '—')}</td>
+      <td style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(m.message || '')}">${escapeHtml(m.message || '')}</td>
+      <td>${statusPill}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+$('btn-refresh-wa-messages').addEventListener('click', loadWAMessages);
+
+// --- Email messages log ---
+async function loadEmailMessages() {
+  const msgs = await api('/admin/email-messages');
+  const tbody = $('email-messages-tbody');
+  tbody.innerHTML = '';
+  $('email-messages-empty').classList.toggle('hidden', msgs.length > 0);
+  for (const m of msgs) {
+    const tr = document.createElement('tr');
+    const statusPill = m.status === 'sent'
+      ? '<span class="pill ok">sent</span>'
+      : `<span class="pill danger" title="${escapeHtml(m.error || '')}">${escapeHtml(m.status)}</span>`;
+    tr.innerHTML = `
+      <td>${escapeHtml(m.created_at)}</td>
+      <td>${m.app_id ? `<span class="mono">${escapeHtml(m.app_id.slice(0,8))}…</span>` : '<span class="muted">—</span>'}</td>
+      <td>${escapeHtml(m.to)}</td>
+      <td>${escapeHtml(m.subject || '—')}</td>
+      <td>${statusPill}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+$('btn-refresh-email-messages').addEventListener('click', loadEmailMessages);
 
 init();
 </script>

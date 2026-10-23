@@ -14,9 +14,11 @@ import (
 	"pushhub/internal/auth"
 	"pushhub/internal/config"
 	"pushhub/internal/db"
+	"pushhub/internal/emailsend"
 	"pushhub/internal/handlers"
 	"pushhub/internal/middleware"
 	"pushhub/internal/panel"
+	"pushhub/internal/wa"
 )
 
 func main() {
@@ -47,9 +49,22 @@ func main() {
 	mux.Handle("POST /subscribe", handlers.Subscribe(pool))
 	mux.Handle("POST /unsubscribe", handlers.Unsubscribe(pool))
 
-	// Tenant-authenticated endpoint, called from each app's own backend (never the browser)
-	// using the X-API-Key issued when the app was registered.
+	// Tenant-authenticated endpoints, called from each app's own backend (never the browser)
+	// using the X-API-Key issued when the app was registered. Three channels: Push, WhatsApp
+	// (via hub-level shared Fonnte numbers), and Email (via hub-level shared SMTP account).
+	waLimiter := wa.NewLimiter()
+	emailCfg := emailsend.Config{
+		Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword, From: cfg.SMTPFrom, FromName: cfg.SMTPFromName,
+	}
 	mux.Handle("POST /send", middleware.RequireAppAPIKey(pool)(handlers.Send(pool)))
+	mux.Handle("POST /send/wa", middleware.RequireAppAPIKey(pool)(handlers.SendWA(pool, waLimiter)))
+	mux.Handle("POST /send/email", middleware.RequireAppAPIKey(pool)(handlers.SendEmail(pool, emailCfg)))
+
+	// Public: called by Fonnte itself when a WhatsApp reply arrives on one of the hub's numbers.
+	// number_id in the path is the hub-generated WA number UUID, configured as this number's
+	// webhook URL in Fonnte's own dashboard.
+	mux.Handle("POST /webhook/fonnte/{number_id}", handlers.FonnteWebhook(pool))
 
 	// Admin web panel auth (public: logging in IS how you authenticate).
 	mux.Handle("POST /admin/login", handlers.Login(pool, cfg.TOTPIssuer, cfg.CookieSecure))
@@ -63,6 +78,15 @@ func main() {
 	mux.Handle("GET /admin/apps", adminAuth(handlers.ListApps(pool)))
 	mux.Handle("POST /admin/apps", adminAuth(handlers.CreateApp(pool)))
 	mux.Handle("POST /admin/apps/{slug}/regenerate-key", adminAuth(handlers.RegenerateAppKey(pool)))
+	mux.Handle("POST /admin/apps/{slug}/webhook", adminAuth(handlers.UpdateAppWebhook(pool)))
+
+	// WhatsApp number management (hub-level Fonnte-connected senders) and message logs.
+	mux.Handle("GET /admin/wa-numbers", adminAuth(handlers.ListWANumbers(pool)))
+	mux.Handle("POST /admin/wa-numbers", adminAuth(handlers.CreateWANumber(pool)))
+	mux.Handle("POST /admin/wa-numbers/{id}/toggle", adminAuth(handlers.ToggleWANumber(pool)))
+	mux.Handle("DELETE /admin/wa-numbers/{id}", adminAuth(handlers.DeleteWANumber(pool)))
+	mux.Handle("GET /admin/wa-messages", adminAuth(handlers.ListWAMessages(pool)))
+	mux.Handle("GET /admin/email-messages", adminAuth(handlers.ListEmailMessages(pool)))
 
 	// The admin panel itself (static HTML/JS, embedded in the binary).
 	mux.Handle("/panel/", http.StripPrefix("/panel", panel.Handler()))

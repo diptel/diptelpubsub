@@ -120,7 +120,7 @@ func DeleteSession(ctx context.Context, pool *pgxpool.Pool, token string) error 
 // ListApps returns every tenant app for the admin panel's dashboard.
 func ListApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, slug, name, api_key, vapid_public_key, vapid_private_key, vapid_subject, created_at, updated_at
+		SELECT id, slug, name, api_key, vapid_public_key, vapid_private_key, vapid_subject, webhook_url, created_at, updated_at
 		FROM apps ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -131,7 +131,7 @@ func ListApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
 	var out []App
 	for rows.Next() {
 		var a App
-		if err := rows.Scan(&a.ID, &a.Slug, &a.Name, &a.APIKey, &a.VAPIDPublicKey, &a.VAPIDPrivateKey, &a.VAPIDSubject, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Slug, &a.Name, &a.APIKey, &a.VAPIDPublicKey, &a.VAPIDPrivateKey, &a.VAPIDSubject, &a.WebhookURL, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -143,7 +143,7 @@ func ListApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
 func RegenerateAppAPIKey(ctx context.Context, pool *pgxpool.Pool, slug, newAPIKey string) (*App, error) {
 	row := pool.QueryRow(ctx, `
 		UPDATE apps SET api_key = $2, updated_at = now() WHERE slug = $1
-		RETURNING id, slug, name, api_key, vapid_public_key, vapid_private_key, vapid_subject, created_at, updated_at
+		RETURNING id, slug, name, api_key, vapid_public_key, vapid_private_key, vapid_subject, webhook_url, created_at, updated_at
 	`, slug, newAPIKey)
 	a, err := scanApp(row)
 	if errors.Is(err, pgx.ErrNoRows) {

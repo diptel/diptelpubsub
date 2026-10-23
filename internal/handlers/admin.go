@@ -16,9 +16,10 @@ import (
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$`)
 
 type createAppRequest struct {
-	Slug         string `json:"slug"`          // e.g. "riwariwi", "briixbroadband", "briix-capital", "kasir"
-	Name         string `json:"name"`          // display name
-	VAPIDSubject string `json:"vapid_subject"` // e.g. "mailto:fika@briix.co.id"
+	Slug         string `json:"slug"`                  // e.g. "riwariwi", "briixbroadband", "briix-capital", "kasir"
+	Name         string `json:"name"`                  // display name
+	VAPIDSubject string `json:"vapid_subject"`         // e.g. "mailto:fika@briix.co.id"
+	WebhookURL   string `json:"webhook_url,omitempty"` // optional: where incoming WA replies for this tenant are forwarded
 }
 
 type createAppResponse struct {
@@ -62,7 +63,7 @@ func CreateApp(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		app, err := db.CreateApp(r.Context(), pool, req.Slug, req.Name, apiKey, pub, priv, req.VAPIDSubject)
+		app, err := db.CreateApp(r.Context(), pool, req.Slug, req.Name, apiKey, pub, priv, req.VAPIDSubject, req.WebhookURL)
 		if err != nil {
 			writeError(w, http.StatusConflict, "app with this slug may already exist: "+err.Error())
 			return
@@ -91,6 +92,7 @@ type appListItem struct {
 	APIKey          string `json:"api_key"`
 	VAPIDPublicKey  string `json:"vapid_public_key"`
 	VAPIDSubject    string `json:"vapid_subject"`
+	WebhookURL      string `json:"webhook_url,omitempty"`
 	SubscriberCount int    `json:"subscriber_count"`
 	CreatedAt       string `json:"created_at"`
 }
@@ -115,7 +117,7 @@ func ListApps(pool *pgxpool.Pool) http.HandlerFunc {
 
 		out := make([]appListItem, 0, len(apps))
 		for _, a := range apps {
-			out = append(out, appListItem{
+			item := appListItem{
 				Slug:            a.Slug,
 				Name:            a.Name,
 				APIKey:          a.APIKey,
@@ -123,7 +125,11 @@ func ListApps(pool *pgxpool.Pool) http.HandlerFunc {
 				VAPIDSubject:    a.VAPIDSubject,
 				SubscriberCount: counts[a.ID],
 				CreatedAt:       a.CreatedAt.Format("2006-01-02 15:04"),
-			})
+			}
+			if a.WebhookURL != nil {
+				item.WebhookURL = *a.WebhookURL
+			}
+			out = append(out, item)
 		}
 		writeJSON(w, http.StatusOK, out)
 	}

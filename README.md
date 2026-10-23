@@ -1,11 +1,13 @@
-# PushHub
+# PushHub — Notification Hub
 
-Push notification service (Web Push / VAPID) multi-tenant yang dipakai bersama oleh beberapa
-project: **riwariwi**, **briixbroadband**, **briix capital / mifos mobile PWA**, **kasir**, dan
-project lain di masa depan.
+Notification hub multi-tenant, multi-channel (**Push / Web Push VAPID**, **WhatsApp via
+Fonnte**, **Email**) yang dipakai bersama oleh beberapa project: **riwariwi**,
+**briixbroadband**, **briix capital / mifos mobile PWA**, **kasir**, dan project lain di masa
+depan.
 
-Satu service, satu set VAPID key **per app** (tenant), satu database Postgres. Tiap app cukup
-panggil API ini untuk subscribe dan kirim notifikasi — tidak perlu implement Web Push sendiri-sendiri.
+Satu service, satu database Postgres, kredensial provider (Fonnte token, akun SMTP) di level
+**hub** (bukan per-tenant) — tiap app cukup panggil API ini dengan API key-nya sendiri untuk
+mengirim notifikasi lewat channel apapun, tanpa perlu provider/akun sendiri-sendiri.
 
 ## Arsitektur singkat
 
@@ -17,19 +19,38 @@ PushHub  ── /vapid-public-key     (public, by app slug)
          ── /subscribe            (public, by app slug)
          ── /unsubscribe          (public, by app slug)
          ── /send                 (tenant-auth via X-API-Key)      ◄── dipanggil backend tiap app
-         ── /admin/apps           (admin-auth: session atau ADMIN_TOKEN)
-         ── /panel/                (web panel: login + TOTP, kelola app)
+         ── /send/wa              (tenant-auth via X-API-Key)      ◄── kirim WhatsApp via Fonnte
+         ── /send/email           (tenant-auth via X-API-Key)      ◄── kirim email via SMTP hub
+         ── /webhook/fonnte/{id}  (public — dipanggil Fonnte saat ada balasan WA masuk)
+         ── /admin/apps, /admin/wa-numbers, ...  (admin-auth: session atau ADMIN_TOKEN)
+         ── /panel/                (web panel: login + TOTP, kelola app/nomor WA/log)
    │
    ▼
-Postgres (apps, subscriptions, notifications_log, admin_users, admin_sessions)
+Postgres (apps, subscriptions, wa_numbers, wa_messages, email_messages, admin_users, admin_sessions)
 ```
 
 - **Frontend** tiap app memanggil `/vapid-public-key`, `/subscribe`, `/unsubscribe` langsung —
   tidak butuh API key (publik, diidentifikasi lewat `app` slug).
-- **Backend** tiap app memanggil `/send` dengan header `X-API-Key` miliknya sendiri saat mau
-  mengirim notifikasi (order berubah status, promo, dll).
-- **Admin** (kamu) daftarkan app baru lewat **web panel di `/panel/`** (login username/password
-  + kode authenticator), atau lewat `/admin/apps` pakai `ADMIN_TOKEN` untuk automasi/curl.
+- **Backend** tiap app memanggil `/send`, `/send/wa`, atau `/send/email` dengan header
+  `X-API-Key` miliknya sendiri saat mau mengirim notifikasi (order berubah status, promo, dll),
+  lewat channel manapun yang paling pas.
+- **WhatsApp (Fonnte)**: hub menyimpan 1-2 nomor WA (token Fonnte) secara terpusat, dikategorikan
+  `otp` (dipakai khusus OTP/transaksional, terisolasi dari resiko blokir) atau `general`
+  (notifikasi/promo/CS). Semua tenant berbagi nomor yang sama — pesan otomatis diberi prefix
+  `[Nama App]` supaya penerima tahu bisnis mana yang mengirim. Pengiriman di-rate-limit per
+  nomor (bukan per tenant) karena Fonnte memakai WhatsApp biasa, bukan WhatsApp Business API
+  resmi, dan nomor bisa diblokir kalau kirim terlalu cepat/banyak.
+- **Balasan WhatsApp masuk**: tiap nomor WA punya satu webhook URL (`/webhook/fonnte/{number_id}`)
+  yang didaftarkan di dashboard Fonnte. Hub mencocokkan balasan ke tenant yang **terakhir**
+  mengirim ke nomor HP tersebut, lalu meneruskannya ke `webhook_url` tenant itu (misal flow n8n)
+  — kalau tidak ada tenant yang cocok, balasan tetap tercatat di log tapi tidak diteruskan.
+- **Email**: hub memakai satu akun SMTP bersama (`SMTP_*` di `.env`), sama seperti nomor WA — tiap
+  tenant kirim "dari" mailbox yang sama, subjek email diberi prefix `[Nama App]`.
+- **n8n** (kalau dipakai) berperan di logika bisnis (auto-reply, broadcast, routing CS) —
+  antrian/rate-limit/isolasi nomor tetap ditangani hub ini, bukan n8n.
+- **Admin** (kamu) daftarkan app baru dan kelola nomor WA lewat **web panel di `/panel/`** (login
+  username/password + kode authenticator), atau lewat `/admin/*` pakai `ADMIN_TOKEN` untuk
+  automasi/curl.
 
 ## Menjalankan (deploy ke server, mis. 1Panel Pro)
 
@@ -54,6 +75,14 @@ baru harus dijalankan manual sekali:
 docker compose exec -T postgres psql -U pushhub -d pushhub < migrations/0002_admin_auth.sql
 ```
 
+Begitu juga untuk migrasi WhatsApp + Email (`wa_numbers`, `wa_messages`, `email_messages`,
+kolom `webhook_url` di `apps`) — kalau database sudah pernah jalan sebelumnya, jalankan manual
+sekali:
+
+```sh
+docker compose exec -T postgres psql -U pushhub -d pushhub < migrations/0003_notification_channels.sql
+```
+
 ## Web panel admin (login username/password + TOTP)
 
 Setelah service jalan, buka `http://<host>:<port>/panel/` di browser.
@@ -69,9 +98,14 @@ Setelah service jalan, buka `http://<host>:<port>/panel/` di browser.
 pada umumnya.
 
 **Dari dashboard panel, kamu bisa:**
-- Tambah app/tenant baru (slug, nama, VAPID subject) — API key langsung disalin ke clipboard.
-- Lihat semua app yang terdaftar beserta jumlah subscriber-nya.
-- Regenerate API key suatu app (kalau key lama bocor/perlu diganti).
+- **Tab Apps**: tambah app/tenant baru (slug, nama, VAPID subject, webhook WA masuk opsional)
+  — API key langsung disalin ke clipboard. Lihat semua app beserta jumlah subscriber-nya,
+  regenerate API key, dan set/ubah webhook WA masuk per app kapan saja.
+- **Tab Nomor WA**: tambah nomor WA (label, token Fonnte, kategori `otp`/`general`, prioritas,
+  min. interval kirim), aktif/nonaktifkan, hapus, dan salin URL webhook (`/webhook/fonnte/{id}`)
+  untuk didaftarkan di dashboard Fonnte masing-masing nomor.
+- **Tab Log WhatsApp / Log Email**: lihat 200 pesan WA (masuk & keluar) atau email terbaru
+  lintas semua tenant beserta status kirimnya.
 
 **Catatan keamanan:**
 - `ADMIN_BOOTSTRAP_USERNAME`/`ADMIN_BOOTSTRAP_PASSWORD` di `.env` hanya dipakai **sekali** saat
@@ -203,15 +237,57 @@ atau untuk broadcast ke semua subscriber app ini:
 Subscription yang sudah kadaluarsa (endpoint dihapus browser) otomatis dibersihkan dari
 database saat pengiriman gagal dengan status 404/410 dari push service.
 
+### `POST /send/wa`
+Butuh header `X-API-Key: <api_key milik app>`. Body:
+```json
+{ "phone": "6281234567890", "message": "...", "category": "otp" }
+```
+`category` opsional, default `"general"`. `"otp"` akan dirutekan ke nomor WA yang dikategorikan
+khusus OTP (lihat tab "Nomor WA" di panel); kalau tidak ada nomor aktif untuk kategori tersebut,
+jatuh ke nomor aktif manapun. Pesan otomatis diberi prefix `[Nama App]` kalau belum ada. Respons:
+```json
+{ "status": "sent", "wa_number": "WA Utama OTP" }
+```
+
+### `POST /send/email`
+Butuh header `X-API-Key: <api_key milik app>`. Body:
+```json
+{ "to": "user@example.com", "subject": "...", "body": "...", "html": false }
+```
+Dikirim lewat akun SMTP hub (`SMTP_*` di `.env`); kalau belum dikonfigurasi, endpoint ini
+mengembalikan error yang jelas. Subjek otomatis diberi prefix `[Nama App]`.
+
+### `POST /webhook/fonnte/{number_id}`
+Publik (tidak butuh auth — `number_id` di path adalah UUID acak yang berfungsi sebagai secret-nya
+sendiri). Dipanggil oleh Fonnte sendiri saat ada balasan WhatsApp masuk ke salah satu nomor hub.
+Hub mencocokkan ke tenant yang terakhir mengirim ke nomor HP tersebut lewat nomor WA ini, lalu
+meneruskan `{ "app": "<slug>", "phone": "...", "message": "..." }` ke `webhook_url` tenant itu
+kalau ada. Balasan yang tidak cocok ke tenant manapun tetap tercatat di log (tab "Log WhatsApp").
+
 ### Endpoint admin (butuh session panel yang sudah login, ATAU header `Authorization: Bearer <ADMIN_TOKEN>`)
 
-- `GET /admin/apps` — daftar semua app terdaftar (termasuk API key & jumlah subscriber).
+- `GET /admin/apps` — daftar semua app terdaftar (termasuk API key, jumlah subscriber, webhook
+  WA masuk).
 - `POST /admin/apps` — daftarkan app/tenant baru, generate VAPID keypair dan API key baru. Body:
   ```json
-  { "slug": "riwariwi", "name": "Riwariwi", "vapid_subject": "mailto:fika@briix.co.id" }
+  { "slug": "riwariwi", "name": "Riwariwi", "vapid_subject": "mailto:fika@briix.co.id", "webhook_url": "https://n8n.example.com/webhook/riwariwi-wa" }
   ```
+  `webhook_url` opsional.
 - `POST /admin/apps/<slug>/regenerate-key` — ganti API key suatu app (key lama langsung tidak
   berlaku).
+- `POST /admin/apps/<slug>/webhook` — set/ubah/hapus webhook WA masuk suatu app. Body:
+  `{ "webhook_url": "https://..." }` (string kosong untuk menghapus).
+- `GET /admin/wa-numbers` — daftar nomor WA terdaftar (token Fonnte tidak pernah dikembalikan di
+  response ini).
+- `POST /admin/wa-numbers` — tambah nomor WA baru. Body:
+  ```json
+  { "label": "WA Utama OTP", "phone_number": "6281234567890", "fonnte_token": "...", "category": "otp", "priority": 100, "min_interval_ms": 2000 }
+  ```
+- `POST /admin/wa-numbers/<id>/toggle` — aktif/nonaktifkan nomor tanpa menghapus riwayatnya.
+  Body: `{ "active": false }`.
+- `DELETE /admin/wa-numbers/<id>` — hapus nomor WA.
+- `GET /admin/wa-messages` — 200 pesan WhatsApp terbaru (masuk & keluar, lintas semua tenant).
+- `GET /admin/email-messages` — 200 email terbaru (lintas semua tenant).
 
 ### Endpoint login panel (publik — ini memang cara otentikasi)
 
@@ -235,18 +311,34 @@ database saat pengiriman gagal dengan status 404/410 dari push service.
   native app + FCM/APNs di masa depan — backend `/send` di sini bisa diperluas untuk itu tanpa
   mengubah cara tiap app memanggilnya.
 
+## Catatan teknis — channel WhatsApp & Email
+
+- **Nomor WA & akun SMTP di level hub, bukan per-tenant** — ini keputusan arsitektur yang
+  disengaja: hanya perlu 1-2 token Fonnte dan 1 akun SMTP untuk seluruh bisnis, dikelola sekali
+  lewat panel, bukan tiap app bikin akun Fonnte/SMTP sendiri.
+- **Rate limit per nomor WA**, bukan per tenant/app — kalau beberapa app kirim ke nomor yang
+  sama bersamaan, kiriman diantre (serial) per nomor; nomor lain tidak terpengaruh.
+- **Isolasi kategori OTP vs general** mencegah nomor OTP ikut kena resiko blokir akibat trafik
+  promo/broadcast — kalau tidak ada nomor aktif untuk kategori yang diminta, fallback ke nomor
+  aktif manapun (supaya kirim tidak gagal total hanya karena belum ada nomor khusus).
+- **Routing balasan WA masuk** memakai "tenant terakhir yang mengirim ke nomor HP ini", bukan
+  daftar statis — jadi tidak perlu mapping manual nomor HP pelanggan ke tenant.
+
 ## Struktur project
 
 ```
-cmd/server/main.go          - entrypoint, routing, bootstrap akun admin pertama
-internal/config/            - load env var
-internal/db/                - koneksi Postgres + query (apps, subscriptions, notifications_log, admin_users, admin_sessions)
-internal/push/               - generate VAPID key, kirim Web Push
+cmd/server/main.go           - entrypoint, routing, bootstrap akun admin pertama
+internal/config/             - load env var
+internal/db/                 - koneksi Postgres + query (apps, subscriptions, wa_numbers, wa_messages, email_messages, admin_users, admin_sessions)
+internal/push/                - generate VAPID key, kirim Web Push
+internal/wa/                   - kirim WhatsApp via Fonnte + rate limiter per nomor
+internal/emailsend/             - kirim email via SMTP (net/smtp stdlib)
 internal/auth/                - bcrypt password hashing, generate/validasi TOTP, render QR code
 internal/middleware/         - auth (X-API-Key per tenant, admin token, session cookie panel)
-internal/handlers/           - HTTP handlers
+internal/handlers/           - HTTP handlers (push, wa, email, wa_webhook, admin, wa_admin)
 internal/panel/               - web panel admin (HTML/CSS/JS di-embed ke binary Go)
 migrations/0001_init.sql     - skema database inti
 migrations/0002_admin_auth.sql - skema admin_users & admin_sessions
+migrations/0003_notification_channels.sql - skema wa_numbers, wa_messages, email_messages, apps.webhook_url
 examples/                    - contoh integrasi frontend & backend
 ```
