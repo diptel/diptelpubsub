@@ -76,11 +76,16 @@ func FonnteWebhook(pool *pgxpool.Pool, limiter *wa.Limiter) http.HandlerFunc {
 }
 
 // handleNotificationReply logs the reply (unattributed — notification numbers aren't tied to one
-// tenant conversation) and, at most once per notifAutoReplyGap per phone, points the sender at
-// the CS number instead of forwarding anywhere.
+// tenant conversation). For "general", it also points the sender at the CS number, at most once
+// per notifAutoReplyGap per phone. For "otp" the reply is fully ignored — no canned auto-reply at
+// all, by Fi's explicit request (1 Nov 2026): the OTP number should never message back on its own.
 func handleNotificationReply(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limiter, number *db.WANumber, phone, message string) {
 	if logErr := db.LogWAMessage(ctx, pool, "", strPtr(number.ID), "in", phone, number.Category, message, "received", nil, nil); logErr != nil {
 		log.Printf("pushhub: failed to log incoming WA message: %v", logErr)
+	}
+
+	if number.Category == "otp" {
+		return
 	}
 
 	shouldReply, err := db.ShouldSendAutoReply(ctx, pool, number.ID, phone, notifAutoReplyGap)
