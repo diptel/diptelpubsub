@@ -43,9 +43,9 @@ func GetActiveSession(ctx context.Context, pool *pgxpool.Pool, waNumberID, phone
 	return s, nil
 }
 
-// CreateSession opens a new "awaiting_service" session showing this menu (app IDs, in display
+// CreateCSSession opens a new "awaiting_service" session showing this menu (app IDs, in display
 // order) to the customer.
-func CreateSession(ctx context.Context, pool *pgxpool.Pool, waNumberID, phone string, pendingMenu []string) (*CSSession, error) {
+func CreateCSSession(ctx context.Context, pool *pgxpool.Pool, waNumberID, phone string, pendingMenu []string) (*CSSession, error) {
 	menuJSON, _ := json.Marshal(pendingMenu)
 	row := pool.QueryRow(ctx, `
 		INSERT INTO cs_sessions (wa_number_id, phone, status, pending_menu)

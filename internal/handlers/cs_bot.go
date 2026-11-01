@@ -42,7 +42,7 @@ func handleCSReply(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limiter,
 
 func startNewCSSession(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limiter, number *db.WANumber, phone, message string) {
 	if app, err := detectAppByRef(ctx, pool, message); err == nil && app != nil {
-		s, cerr := db.CreateSession(ctx, pool, number.ID, phone, nil)
+		s, cerr := db.CreateCSSession(ctx, pool, number.ID, phone, nil)
 		if cerr != nil {
 			log.Printf("pushhub: cs hub: failed to create session: %v", cerr)
 			return
@@ -65,7 +65,7 @@ func startNewCSSession(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limi
 		return
 	}
 	ids, menuText := buildMenu(apps)
-	s, cerr := db.CreateSession(ctx, pool, number.ID, phone, ids)
+	s, cerr := db.CreateCSSession(ctx, pool, number.ID, phone, ids)
 	if cerr != nil {
 		log.Printf("pushhub: cs hub: failed to create session: %v", cerr)
 		return
