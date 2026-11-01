@@ -19,4 +19,11 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Run command
+        env:
+          # Generic one-off secret slot: for a command that needs to pass a credential (e.g.
+          # registering a new Fonnte token), set it first with `gh secret set OPS_SECRET --body
+          # '...'` so it's encrypted at rest and masked in logs, then reference $OPS_SECRET in
+          # `cmd` instead of pasting the raw value into the workflow_dispatch input (which is
+          # visible in the Actions run's event payload to anyone who can see this repo's Actions).
+          OPS_SECRET: ${{ secrets.OPS_SECRET }}
         run: bash -lc "${{ github.event.inputs.cmd }}"
