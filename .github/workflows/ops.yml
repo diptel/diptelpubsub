@@ -1,0 +1,22 @@
+name: Ops (run a command on the server)
+
+# Dipicu MANUAL saja (workflow_dispatch), dijalankan di runner yang sama dengan deploy — artinya
+# langsung di server 1Panel kamu. Dipakai sebagai "terminal jarak jauh" dari sesi Claude lewat
+# `gh workflow run` + `gh run view --log`, tanpa perlu akses SSH terpisah (mis. saat Termalin Pro
+# tidak aktif). Hanya siapa yang punya akses push/write ke repo ini yang bisa memicu workflow ini,
+# jadi levelnya setara dengan push-to-deploy yang sudah ada (siapa pun yang bisa push ke `main`
+# sudah bisa menjalankan kode apa pun di server lewat itu juga).
+on:
+  workflow_dispatch:
+    inputs:
+      cmd:
+        description: "Shell command to run on the server (bash -lc)"
+        required: true
+        type: string
+
+jobs:
+  run:
+    runs-on: self-hosted
+    steps:
+      - name: Run command
+        run: bash -lc "${{ github.event.inputs.cmd }}"
