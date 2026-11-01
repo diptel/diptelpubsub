@@ -64,7 +64,7 @@ func main() {
 	// Public: called by Fonnte itself when a WhatsApp reply arrives on one of the hub's numbers.
 	// number_id in the path is the hub-generated WA number UUID, configured as this number's
 	// webhook URL in Fonnte's own dashboard.
-	mux.Handle("POST /webhook/fonnte/{number_id}", handlers.FonnteWebhook(pool))
+	mux.Handle("POST /webhook/fonnte/{number_id}", handlers.FonnteWebhook(pool, waLimiter))
 
 	// Admin web panel auth (public: logging in IS how you authenticate).
 	mux.Handle("POST /admin/login", handlers.Login(pool, cfg.TOTPIssuer, cfg.CookieSecure))
@@ -79,6 +79,7 @@ func main() {
 	mux.Handle("POST /admin/apps", adminAuth(handlers.CreateApp(pool)))
 	mux.Handle("POST /admin/apps/{slug}/regenerate-key", adminAuth(handlers.RegenerateAppKey(pool)))
 	mux.Handle("POST /admin/apps/{slug}/webhook", adminAuth(handlers.UpdateAppWebhook(pool)))
+	mux.Handle("POST /admin/apps/{slug}/cs", adminAuth(handlers.UpdateAppCS(pool)))
 
 	// WhatsApp number management (hub-level Fonnte-connected senders) and message logs.
 	mux.Handle("GET /admin/wa-numbers", adminAuth(handlers.ListWANumbers(pool)))
@@ -87,6 +88,12 @@ func main() {
 	mux.Handle("DELETE /admin/wa-numbers/{id}", adminAuth(handlers.DeleteWANumber(pool)))
 	mux.Handle("GET /admin/wa-messages", adminAuth(handlers.ListWAMessages(pool)))
 	mux.Handle("GET /admin/email-messages", adminAuth(handlers.ListEmailMessages(pool)))
+
+	// CS Hub: inbox for the shared help-conversation number (see migrations/0004_cs_hub.sql).
+	mux.Handle("GET /admin/cs-sessions", adminAuth(handlers.ListCSSessions(pool)))
+	mux.Handle("GET /admin/cs-sessions/{id}/messages", adminAuth(handlers.GetCSSessionMessages(pool)))
+	mux.Handle("POST /admin/cs-sessions/{id}/reply", adminAuth(handlers.ReplyCSSession(pool, waLimiter)))
+	mux.Handle("POST /admin/cs-sessions/{id}/close", adminAuth(handlers.CloseCSSession(pool)))
 
 	// The admin panel itself (static HTML/JS, embedded in the binary).
 	mux.Handle("/panel/", http.StripPrefix("/panel", panel.Handler()))

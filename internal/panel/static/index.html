@@ -168,6 +168,7 @@
     <button class="tab-btn" data-tab="tab-wa-numbers">Nomor WA</button>
     <button class="tab-btn" data-tab="tab-wa-messages">Log WhatsApp</button>
     <button class="tab-btn" data-tab="tab-email-messages">Log Email</button>
+    <button class="tab-btn" data-tab="tab-cs-inbox">CS Inbox</button>
   </div>
 
   <!-- Apps tab -->
@@ -185,6 +186,7 @@
             <th>API Key</th>
             <th>VAPID Public Key</th>
             <th>Webhook WA Masuk</th>
+            <th>CS Hub</th>
             <th>Dibuat</th>
             <th></th>
           </tr>
@@ -269,6 +271,40 @@
       <p class="sub" id="email-messages-empty" style="margin-top:16px;">Belum ada email terkirim.</p>
     </div>
   </div>
+
+  <!-- CS Inbox tab -->
+  <div id="tab-cs-inbox" class="tab-panel">
+    <div class="card" style="display:flex; gap:16px; align-items:stretch; min-height:420px;">
+      <div style="flex:1 1 340px; max-width:380px; display:flex; flex-direction:column;">
+        <div class="topbar" style="margin-bottom:12px;">
+          <h2 style="margin:0;">Sesi CS</h2>
+          <button class="btn-secondary btn-small" id="btn-refresh-cs-sessions">Refresh</button>
+        </div>
+        <select id="cs-filter-status" style="margin-bottom:8px;">
+          <option value="">Semua status</option>
+          <option value="awaiting_service">Menunggu pilih layanan</option>
+          <option value="open" selected>Sedang terhubung</option>
+          <option value="closed">Selesai</option>
+        </select>
+        <div id="cs-sessions-list" style="overflow-y:auto; flex:1;"></div>
+        <p class="sub" id="cs-sessions-empty" style="margin-top:12px;">Belum ada sesi CS.</p>
+      </div>
+      <div style="flex:2 1 500px; display:flex; flex-direction:column; border-left:1px solid var(--border); padding-left:16px;">
+        <div id="cs-chat-empty" class="sub">Pilih sesi di sebelah kiri untuk melihat percakapan.</div>
+        <div id="cs-chat-view" class="hidden" style="display:flex; flex-direction:column; height:100%;">
+          <div class="topbar" style="margin-bottom:12px;">
+            <h2 style="margin:0;" id="cs-chat-title"></h2>
+            <button class="btn-danger btn-small" id="btn-close-cs-session">Tandai Selesai</button>
+          </div>
+          <div id="cs-chat-messages" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
+          <div class="row">
+            <input id="cs-reply-input" placeholder="Tulis balasan…" />
+            <button class="btn-primary" id="btn-send-cs-reply" style="margin-top:0; width:auto;">Kirim</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Add app modal -->
@@ -338,6 +374,24 @@
       <button class="btn-primary" id="add-wa-number-submit" style="margin-top:0;">Simpan</button>
     </div>
     <div class="error" id="add-wa-number-error"></div>
+  </div>
+</div>
+
+<!-- Edit app CS settings modal -->
+<div id="modal-edit-cs" class="modal-backdrop hidden">
+  <div class="modal">
+    <h1 style="font-size:16px;">CS Hub — <span id="edit-cs-slug" class="mono"></span></h1>
+    <label><input type="checkbox" id="edit-cs-enabled" style="width:auto; display:inline-block; margin-right:8px;" />Tampilkan di menu bot CS</label>
+    <label for="edit-cs-label">Nama tampil di menu</label>
+    <input id="edit-cs-label" placeholder="Kliro" />
+    <label for="edit-cs-prefix">Prefix nomor transaksi (opsional)</label>
+    <input id="edit-cs-prefix" placeholder="KLR-" />
+    <div class="hint">Kalau pesan pelanggan mengandung teks ini (mis. "KLR-123"), bot langsung menghubungkan ke layanan ini tanpa bertanya menu.</div>
+    <div class="row" style="margin-top:20px;">
+      <button class="btn-secondary" id="edit-cs-cancel">Batal</button>
+      <button class="btn-primary" id="edit-cs-submit" style="margin-top:0;">Simpan</button>
+    </div>
+    <div class="error" id="edit-cs-error"></div>
   </div>
 </div>
 
@@ -447,6 +501,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'tab-wa-messages') loadWAMessages();
     if (btn.dataset.tab === 'tab-email-messages') loadEmailMessages();
     if (btn.dataset.tab === 'tab-wa-numbers') loadWANumbers();
+    if (btn.dataset.tab === 'tab-cs-inbox') loadCSSessions();
   });
 });
 
@@ -467,9 +522,11 @@ async function loadApps() {
       <td><code class="key" title="Klik untuk salin">${escapeHtml(app.api_key.slice(0,14))}…</code></td>
       <td><code class="key" title="Klik untuk salin">${escapeHtml(app.vapid_public_key.slice(0,14))}…</code></td>
       <td>${webhookLabel}</td>
+      <td>${app.cs_enabled ? `<span class="pill ok">menu CS</span> ${escapeHtml(app.cs_ref_prefix || '')}` : '<span class="muted">—</span>'}</td>
       <td>${escapeHtml(app.created_at)}</td>
       <td>
         <button class="btn-secondary btn-small" data-action="webhook" data-slug="${escapeHtml(app.slug)}" data-webhook="${escapeHtml(app.webhook_url || '')}">Webhook</button>
+        <button class="btn-secondary btn-small" data-action="cs" data-slug="${escapeHtml(app.slug)}">CS Hub</button>
         <button class="btn-secondary btn-small" data-action="regen" data-slug="${escapeHtml(app.slug)}">Regenerate Key</button>
       </td>
     `;
@@ -477,6 +534,7 @@ async function loadApps() {
     tr.querySelectorAll('code.key')[1].addEventListener('click', () => copyText(app.vapid_public_key));
     tr.querySelector('button[data-action="regen"]').addEventListener('click', () => regenerateKey(app.slug));
     tr.querySelector('button[data-action="webhook"]').addEventListener('click', () => openEditWebhook(app.slug, app.webhook_url || ''));
+    tr.querySelector('button[data-action="cs"]').addEventListener('click', () => openEditCS(app));
     tbody.appendChild(tr);
   }
 }
@@ -535,6 +593,35 @@ $('edit-webhook-submit').addEventListener('click', async () => {
     loadApps();
   } catch (e) {
     $('edit-webhook-error').textContent = e.message;
+  }
+});
+
+// --- Edit app CS Hub settings modal ---
+let editCSSlug = null;
+function openEditCS(app) {
+  editCSSlug = app.slug;
+  $('edit-cs-slug').textContent = app.slug;
+  $('edit-cs-enabled').checked = !!app.cs_enabled;
+  $('edit-cs-label').value = app.cs_menu_label || '';
+  $('edit-cs-prefix').value = app.cs_ref_prefix || '';
+  $('edit-cs-error').textContent = '';
+  show('modal-edit-cs');
+}
+$('edit-cs-cancel').addEventListener('click', () => hide('modal-edit-cs'));
+$('edit-cs-submit').addEventListener('click', async () => {
+  $('edit-cs-error').textContent = '';
+  const body = {
+    cs_enabled: $('edit-cs-enabled').checked,
+    cs_menu_label: $('edit-cs-label').value.trim(),
+    cs_ref_prefix: $('edit-cs-prefix').value.trim(),
+  };
+  try {
+    await api(`/admin/apps/${editCSSlug}/cs`, { method: 'POST', body });
+    hide('modal-edit-cs');
+    toast('Pengaturan CS Hub disimpan');
+    loadApps();
+  } catch (e) {
+    $('edit-cs-error').textContent = e.message;
   }
 });
 
@@ -665,6 +752,93 @@ async function loadEmailMessages() {
   }
 }
 $('btn-refresh-email-messages').addEventListener('click', loadEmailMessages);
+
+// --- CS Inbox ---
+let csActiveSessionId = null;
+let csSessionsCache = [];
+
+async function loadCSSessions() {
+  const status = $('cs-filter-status').value;
+  const sessions = await api('/admin/cs-sessions' + (status ? `?status=${encodeURIComponent(status)}` : ''));
+  csSessionsCache = sessions;
+  const list = $('cs-sessions-list');
+  list.innerHTML = '';
+  $('cs-sessions-empty').classList.toggle('hidden', sessions.length > 0);
+  for (const s of sessions) {
+    const row = document.createElement('div');
+    row.className = 'card';
+    row.style = 'padding:10px 12px; margin-bottom:8px; cursor:pointer;' + (s.id === csActiveSessionId ? ' border-color: var(--accent);' : '');
+    const statusLabel = { awaiting_service: 'menunggu pilih layanan', open: 'terhubung', closed: 'selesai' }[s.status] || s.status;
+    row.innerHTML = `
+      <strong>${escapeHtml(s.phone)}</strong>
+      <span class="pill" style="margin-left:6px;">${escapeHtml(s.app_name || statusLabel)}</span>
+      <div class="sub" style="margin:4px 0 0;">${escapeHtml(statusLabel)} · ${escapeHtml(s.last_message_at)}</div>
+    `;
+    row.addEventListener('click', () => openCSChat(s));
+    list.appendChild(row);
+  }
+}
+$('btn-refresh-cs-sessions').addEventListener('click', loadCSSessions);
+$('cs-filter-status').addEventListener('change', loadCSSessions);
+
+async function openCSChat(session) {
+  csActiveSessionId = session.id;
+  loadCSSessions(); // re-render list with highlight
+  $('cs-chat-empty').classList.add('hidden');
+  $('cs-chat-view').classList.remove('hidden');
+  $('cs-chat-title').textContent = `${session.phone} — ${session.app_name || 'belum pilih layanan'}`;
+  await refreshCSMessages(session.id);
+}
+
+async function refreshCSMessages(sessionId) {
+  const msgs = await api(`/admin/cs-sessions/${sessionId}/messages`);
+  const box = $('cs-chat-messages');
+  box.innerHTML = '';
+  for (const m of msgs) {
+    const bubble = document.createElement('div');
+    const fromCustomer = m.direction === 'in';
+    bubble.style = `max-width:80%; padding:8px 12px; border-radius:10px; ${fromCustomer ? 'align-self:flex-start; background:var(--panel-2);' : 'align-self:flex-end; background:var(--accent-dark);'}`;
+    bubble.innerHTML = `
+      ${!fromCustomer && m.sender_label ? `<div class="sub" style="margin:0 0 2px;">${escapeHtml(m.sender_label)}</div>` : ''}
+      <div>${escapeHtml(m.message)}</div>
+      <div class="sub" style="margin:4px 0 0; font-size:11px;">${escapeHtml(m.created_at)}</div>
+    `;
+    box.appendChild(bubble);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+$('btn-send-cs-reply').addEventListener('click', async () => {
+  if (!csActiveSessionId) return;
+  const input = $('cs-reply-input');
+  const message = input.value.trim();
+  if (!message) return;
+  try {
+    await api(`/admin/cs-sessions/${csActiveSessionId}/reply`, { method: 'POST', body: { message } });
+    input.value = '';
+    await refreshCSMessages(csActiveSessionId);
+  } catch (e) {
+    toast('Gagal kirim: ' + e.message);
+  }
+});
+$('cs-reply-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('btn-send-cs-reply').click();
+});
+
+$('btn-close-cs-session').addEventListener('click', async () => {
+  if (!csActiveSessionId) return;
+  if (!confirm('Tandai sesi ini selesai?')) return;
+  try {
+    await api(`/admin/cs-sessions/${csActiveSessionId}/close`, { method: 'POST' });
+    toast('Sesi ditutup');
+    csActiveSessionId = null;
+    $('cs-chat-view').classList.add('hidden');
+    $('cs-chat-empty').classList.remove('hidden');
+    loadCSSessions();
+  } catch (e) {
+    toast('Gagal: ' + e.message);
+  }
+});
 
 init();
 </script>

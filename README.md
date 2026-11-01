@@ -332,8 +332,34 @@ kalau ada. Balasan yang tidak cocok ke tenant manapun tetap tercatat di log (tab
 - **Isolasi kategori OTP vs general** mencegah nomor OTP ikut kena resiko blokir akibat trafik
   promo/broadcast — kalau tidak ada nomor aktif untuk kategori yang diminta, fallback ke nomor
   aktif manapun (supaya kirim tidak gagal total hanya karena belum ada nomor khusus).
-- **Routing balasan WA masuk** memakai "tenant terakhir yang mengirim ke nomor HP ini", bukan
-  daftar statis — jadi tidak perlu mapping manual nomor HP pelanggan ke tenant.
+- **Routing balasan WA masuk** memakai "tenant terakhir yang mengirim ke nomor HP ini" — ini
+  berlaku untuk nomor dengan `category` apa pun **selain** `otp`/`general`/`cs` (nomor lama yang
+  belum dikategorikan ulang). Sejak CS Hub (lihat di bawah), nomor `otp`/`general` tidak lagi
+  memakai routing ini.
+
+## CS Hub (nomor bantuan bersama, sejak Nov 2026)
+
+Nomor WA hub dibagi dua peran yang **sengaja dipisah**, supaya resiko blokir nomor notifikasi
+tidak ikut mematikan jalur CS, dan balasan "ok/makasih" ke notifikasi tidak membanjiri inbox CS:
+
+- **Nomor notifikasi** (`category: "otp"` / `"general"`) — murni kirim, tidak melayani
+  percakapan. Balasan apa pun ke nomor ini dibalas otomatis **paling sering sekali per 6 jam**
+  per nomor HP: "Nomor ini khusus notifikasi, bantuan: wa.me/…", lalu tidak diteruskan ke mana pun.
+- **Nomor CS** (`category: "cs"`) — satu nomor untuk percakapan bantuan **semua tenant**. Daftarkan
+  lewat tab "Nomor WA" di panel seperti nomor lain, pilih kategori `cs`.
+
+Bot CS (`internal/handlers/cs_bot.go`):
+1. Pesan masuk tanpa sesi terbuka → bot menampilkan menu layanan (tenant yang diaktifkan lewat
+   tombol "CS Hub" di tab Apps), atau langsung terhubung ke satu tenant kalau pesan mengandung
+   prefix referensinya (`cs_ref_prefix`, mis. `"KLR-"` cocok dengan `"KLR-123 belum sukses"` —
+   juga cocok untuk link `wa.me/<nomor cs>?text=...KLR-123`).
+2. Sesi terbuka → pesan berikutnya masuk ke percakapan itu; staf membalas dari tab **CS Inbox**
+   di panel (bukan bot). Ketik `MENU` untuk ganti layanan.
+3. Sesi otomatis dianggap selesai kalau tidak ada pesan baru selama 24 jam (dicek malas, saat
+   pesan baru masuk atau sesi dibuka di panel — tidak ada cron job terpisah).
+
+Tiap tenant diatur lewat `POST /admin/apps/{slug}/cs` (atau tombol "CS Hub" di panel):
+`{ "cs_enabled": true, "cs_menu_label": "Kliro", "cs_ref_prefix": "KLR-" }`.
 
 ## Struktur project
 
@@ -346,7 +372,7 @@ internal/wa/                   - kirim WhatsApp via Fonnte + rate limiter per no
 internal/emailsend/             - kirim email via SMTP (net/smtp stdlib)
 internal/auth/                - bcrypt password hashing, generate/validasi TOTP, render QR code
 internal/middleware/         - auth (X-API-Key per tenant, admin token, session cookie panel)
-internal/handlers/           - HTTP handlers (push, wa, email, wa_webhook, admin, wa_admin)
+internal/handlers/           - HTTP handlers (push, wa, email, wa_webhook, admin, wa_admin, cs_bot, cs_admin)
 internal/panel/               - web panel admin (HTML/CSS/JS di-embed ke binary Go)
 migrations/0001_init.sql     - skema database inti
 migrations/0002_admin_auth.sql - skema admin_users & admin_sessions

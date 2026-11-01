@@ -11,6 +11,9 @@ type App struct {
 	VAPIDPrivateKey string
 	VAPIDSubject    string
 	WebhookURL      *string // optional: incoming WhatsApp replies for this tenant are forwarded here (e.g. an n8n webhook)
+	CSEnabled       bool    // muncul di menu bot CS Hub?
+	CSMenuLabel     *string // nama tampil di menu bot; fallback ke Name kalau kosong
+	CSRefPrefix     *string // mis. "KLR-" — dicocokkan di awal token pesan untuk auto-pilih tenant tanpa lewat menu
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -67,6 +70,29 @@ type AdminSession struct {
 	AdminUserID string
 	PendingTOTP bool
 	ExpiresAt   time.Time
+	CreatedAt   time.Time
+}
+
+// CSSession is one WhatsApp help conversation on the CS number with one customer phone number.
+type CSSession struct {
+	ID            string
+	WANumberID    string
+	Phone         string
+	AppID         *string  // NULL while Status == "awaiting_service"
+	Status        string   // "awaiting_service" | "open" | "closed"
+	PendingMenu   []string // app IDs, in the order last shown to the customer
+	Rating        *int
+	OpenedAt      time.Time
+	LastMessageAt time.Time
+	ClosedAt      *time.Time
+}
+
+type CSMessage struct {
+	ID          string
+	SessionID   string
+	Direction   string // "in" | "out"
+	SenderLabel *string
+	Message     string
 	CreatedAt   time.Time
 }
 

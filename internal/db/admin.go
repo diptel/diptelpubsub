@@ -119,10 +119,7 @@ func DeleteSession(ctx context.Context, pool *pgxpool.Pool, token string) error 
 
 // ListApps returns every tenant app for the admin panel's dashboard.
 func ListApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT id, slug, name, api_key, vapid_public_key, vapid_private_key, vapid_subject, webhook_url, created_at, updated_at
-		FROM apps ORDER BY created_at DESC
-	`)
+	rows, err := pool.Query(ctx, `SELECT `+appColumns+` FROM apps ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -130,11 +127,11 @@ func ListApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
 
 	var out []App
 	for rows.Next() {
-		var a App
-		if err := rows.Scan(&a.ID, &a.Slug, &a.Name, &a.APIKey, &a.VAPIDPublicKey, &a.VAPIDPrivateKey, &a.VAPIDSubject, &a.WebhookURL, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		a, err := scanAppRows(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, a)
+		out = append(out, *a)
 	}
 	return out, rows.Err()
 }

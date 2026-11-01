@@ -197,3 +197,39 @@ func UpdateAppWebhook(pool *pgxpool.Pool) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, resp)
 	}
 }
+
+// UpdateAppCS sets a tenant's CS Hub menu settings — whether it shows up in the bot's service
+// menu, its display label there, and the transaction-reference prefix that auto-picks it without
+// asking (e.g. "KLR-" so "KLR-123 belum sukses" routes straight to Kliro's session).
+// POST /admin/apps/{slug}/cs  { "cs_enabled": true, "cs_menu_label": "Kliro", "cs_ref_prefix": "KLR-" }
+func UpdateAppCS(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		var req struct {
+			CSEnabled   bool   `json:"cs_enabled"`
+			CSMenuLabel string `json:"cs_menu_label"`
+			CSRefPrefix string `json:"cs_ref_prefix"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		app, err := db.UpdateAppCS(r.Context(), pool, slug, req.CSEnabled, req.CSMenuLabel, req.CSRefPrefix)
+		if err != nil {
+			if err == db.ErrNotFound {
+				writeError(w, http.StatusNotFound, "unknown app slug")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to update CS settings")
+			return
+		}
+		resp := map[string]interface{}{"slug": app.Slug, "cs_enabled": app.CSEnabled}
+		if app.CSMenuLabel != nil {
+			resp["cs_menu_label"] = *app.CSMenuLabel
+		}
+		if app.CSRefPrefix != nil {
+			resp["cs_ref_prefix"] = *app.CSRefPrefix
+		}
+		writeJSON(w, http.StatusOK, resp)
+	}
+}

@@ -93,6 +93,9 @@ type appListItem struct {
 	VAPIDPublicKey  string `json:"vapid_public_key"`
 	VAPIDSubject    string `json:"vapid_subject"`
 	WebhookURL      string `json:"webhook_url,omitempty"`
+	CSEnabled       bool   `json:"cs_enabled"`
+	CSMenuLabel     string `json:"cs_menu_label,omitempty"`
+	CSRefPrefix     string `json:"cs_ref_prefix,omitempty"`
 	SubscriberCount int    `json:"subscriber_count"`
 	CreatedAt       string `json:"created_at"`
 }
@@ -123,11 +126,18 @@ func ListApps(pool *pgxpool.Pool) http.HandlerFunc {
 				APIKey:          a.APIKey,
 				VAPIDPublicKey:  a.VAPIDPublicKey,
 				VAPIDSubject:    a.VAPIDSubject,
+				CSEnabled:       a.CSEnabled,
 				SubscriberCount: counts[a.ID],
 				CreatedAt:       a.CreatedAt.Format("2006-01-02 15:04"),
 			}
 			if a.WebhookURL != nil {
 				item.WebhookURL = *a.WebhookURL
+			}
+			if a.CSMenuLabel != nil {
+				item.CSMenuLabel = *a.CSMenuLabel
+			}
+			if a.CSRefPrefix != nil {
+				item.CSRefPrefix = *a.CSRefPrefix
 			}
 			out = append(out, item)
 		}
