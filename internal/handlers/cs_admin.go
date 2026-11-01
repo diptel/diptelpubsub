@@ -136,11 +136,25 @@ func ReplyCSSession(pool *pgxpool.Pool, limiter *wa.Limiter) http.HandlerFunc {
 	}
 }
 
-// CloseCSSession marks a session done from the panel (staff finished helping the customer).
+// sessionClosedText is sent to the customer when a staff member marks their session done, so
+// they know the conversation is finished rather than being left wondering whether anyone's still
+// there — and know to send a new message (which reopens a fresh session) if they need more help.
+const sessionClosedText = "Percakapan ini sudah ditandai selesai oleh tim kami. Kalau masih butuh bantuan, silakan kirim pesan baru ya."
+
+// CloseCSSession marks a session done from the panel (staff finished helping the customer) and
+// lets the customer know, so "selesai" isn't silent on their end — they'd otherwise have no way
+// to tell whether staff just stopped replying or actually wrapped up the conversation.
 // POST /admin/cs-sessions/{id}/close
-func CloseCSSession(pool *pgxpool.Pool) http.HandlerFunc {
+func CloseCSSession(pool *pgxpool.Pool, limiter *wa.Limiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+
+		session, err := db.GetCSSession(r.Context(), pool, id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "unknown session")
+			return
+		}
+
 		if err := db.CloseSession(r.Context(), pool, id); err != nil {
 			if err == db.ErrNotFound {
 				writeError(w, http.StatusNotFound, "unknown or already-closed session")
@@ -149,6 +163,15 @@ func CloseCSSession(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to close session")
 			return
 		}
+
+		// Best-effort: the session is already closed at this point either way, so a notify
+		// failure (e.g. the CS number got deleted) shouldn't turn into an error response — staff
+		// already did their part by marking it done.
+		if number, numErr := db.GetWANumberByID(r.Context(), pool, session.WANumberID); numErr == nil {
+			sendFromHub(r.Context(), pool, limiter, number, session.Phone, sessionClosedText, "cs")
+			_ = db.AppendCSMessage(r.Context(), pool, session.ID, "out", nil, sessionClosedText)
+		}
+
 		writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
 	}
 }

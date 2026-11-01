@@ -94,7 +94,7 @@ func main() {
 	mux.Handle("GET /admin/cs-sessions", adminAuth(handlers.ListCSSessions(pool)))
 	mux.Handle("GET /admin/cs-sessions/{id}/messages", adminAuth(handlers.GetCSSessionMessages(pool)))
 	mux.Handle("POST /admin/cs-sessions/{id}/reply", adminAuth(handlers.ReplyCSSession(pool, waLimiter)))
-	mux.Handle("POST /admin/cs-sessions/{id}/close", adminAuth(handlers.CloseCSSession(pool)))
+	mux.Handle("POST /admin/cs-sessions/{id}/close", adminAuth(handlers.CloseCSSession(pool, waLimiter)))
 
 	// The admin panel itself (static HTML/JS, embedded in the binary).
 	mux.Handle("/panel/", http.StripPrefix("/panel", panel.Handler()))
