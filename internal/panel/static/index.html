@@ -357,7 +357,8 @@
     <label for="wa-category">Kategori</label>
     <select id="wa-category">
       <option value="otp">otp — khusus OTP/transaksional</option>
-      <option value="general">general — notifikasi/promo/CS</option>
+      <option value="general">general — notifikasi/promo</option>
+      <option value="cs">cs — percakapan bantuan (CS Hub)</option>
     </select>
     <div class="row">
       <div>
@@ -374,6 +375,41 @@
       <button class="btn-primary" id="add-wa-number-submit" style="margin-top:0;">Simpan</button>
     </div>
     <div class="error" id="add-wa-number-error"></div>
+  </div>
+</div>
+
+<!-- Edit WA number modal -->
+<div id="modal-edit-wa-number" class="modal-backdrop hidden">
+  <div class="modal">
+    <h1 style="font-size:16px;">Edit Nomor WA</h1>
+    <input type="hidden" id="edit-wa-id" />
+    <label for="edit-wa-label">Label</label>
+    <input id="edit-wa-label" placeholder="WA Utama OTP" />
+    <label for="edit-wa-phone">No. HP (opsional, untuk catatan)</label>
+    <input id="edit-wa-phone" placeholder="6281234567890" />
+    <label for="edit-wa-token">Fonnte Token (kosongkan kalau tidak diganti)</label>
+    <input id="edit-wa-token" placeholder="isi hanya kalau mau ganti token" />
+    <label for="edit-wa-category">Kategori</label>
+    <select id="edit-wa-category">
+      <option value="otp">otp — khusus OTP/transaksional</option>
+      <option value="general">general — notifikasi/promo</option>
+      <option value="cs">cs — percakapan bantuan (CS Hub)</option>
+    </select>
+    <div class="row">
+      <div>
+        <label for="edit-wa-priority">Prioritas (lebih kecil = diutamakan)</label>
+        <input id="edit-wa-priority" type="number" value="100" />
+      </div>
+      <div>
+        <label for="edit-wa-interval">Min. interval kirim (ms)</label>
+        <input id="edit-wa-interval" type="number" value="2000" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:20px;">
+      <button class="btn-secondary" id="edit-wa-number-cancel">Batal</button>
+      <button class="btn-primary" id="edit-wa-number-submit" style="margin-top:0;">Simpan</button>
+    </div>
+    <div class="error" id="edit-wa-number-error"></div>
   </div>
 </div>
 
@@ -643,10 +679,12 @@ async function loadWANumbers() {
       <td>${statusPill}</td>
       <td><span class="mono">/webhook/fonnte/${escapeHtml(n.id)}</span> <button class="btn-secondary btn-small" data-action="copy-webhook" data-id="${escapeHtml(n.id)}">Salin URL</button></td>
       <td>
+        <button class="btn-secondary btn-small" data-action="edit" data-id="${escapeHtml(n.id)}">Edit</button>
         <button class="btn-secondary btn-small" data-action="toggle" data-id="${escapeHtml(n.id)}" data-active="${n.active}">${n.active ? 'Nonaktifkan' : 'Aktifkan'}</button>
         <button class="btn-danger btn-small" data-action="delete" data-id="${escapeHtml(n.id)}">Hapus</button>
       </td>
     `;
+    tr.querySelector('button[data-action="edit"]').addEventListener('click', () => openEditWANumber(n));
     tr.querySelector('button[data-action="toggle"]').addEventListener('click', () => toggleWANumber(n.id, !n.active));
     tr.querySelector('button[data-action="delete"]').addEventListener('click', () => deleteWANumber(n.id, n.label));
     tr.querySelector('button[data-action="copy-webhook"]').addEventListener('click', () => {
@@ -701,6 +739,40 @@ $('add-wa-number-submit').addEventListener('click', async () => {
     loadWANumbers();
   } catch (e) {
     $('add-wa-number-error').textContent = e.message;
+  }
+});
+
+function openEditWANumber(n) {
+  $('edit-wa-number-error').textContent = '';
+  $('edit-wa-id').value = n.id;
+  $('edit-wa-label').value = n.label;
+  $('edit-wa-phone').value = n.phone_number || '';
+  $('edit-wa-token').value = '';
+  $('edit-wa-category').value = n.category;
+  $('edit-wa-priority').value = n.priority;
+  $('edit-wa-interval').value = n.min_interval_ms;
+  show('modal-edit-wa-number');
+}
+$('edit-wa-number-cancel').addEventListener('click', () => hide('modal-edit-wa-number'));
+$('edit-wa-number-submit').addEventListener('click', async () => {
+  $('edit-wa-number-error').textContent = '';
+  const id = $('edit-wa-id').value;
+  const body = {
+    label: $('edit-wa-label').value.trim(),
+    phone_number: $('edit-wa-phone').value.trim(),
+    category: $('edit-wa-category').value,
+    priority: parseInt($('edit-wa-priority').value, 10) || 100,
+    min_interval_ms: parseInt($('edit-wa-interval').value, 10) || 2000,
+  };
+  const newToken = $('edit-wa-token').value.trim();
+  if (newToken) body.fonnte_token = newToken;
+  try {
+    await api(`/admin/wa-numbers/${id}`, { method: 'PATCH', body });
+    hide('modal-edit-wa-number');
+    toast('Nomor WA diperbarui');
+    loadWANumbers();
+  } catch (e) {
+    $('edit-wa-number-error').textContent = e.message;
   }
 });
 

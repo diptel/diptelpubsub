@@ -83,6 +83,30 @@ func GetWANumberByID(ctx context.Context, pool *pgxpool.Pool, id string) (*WANum
 	return n, err
 }
 
+// UpdateWANumber edits a WA number's editable fields — label, phone number (shown in the panel
+// and used to build "chat with CS" links), category, priority and min send interval. fonnteToken
+// is a pointer: nil leaves the stored Fonnte token untouched, so the panel never has to show or
+// resend it just to let someone fix a typo in the label or phone number.
+func UpdateWANumber(ctx context.Context, pool *pgxpool.Pool, id, label, phoneNumber, category string, priority, minIntervalMs int, fonnteToken *string) (*WANumber, error) {
+	row := pool.QueryRow(ctx, `
+		UPDATE wa_numbers SET
+			label = $2,
+			phone_number = NULLIF($3, ''),
+			category = $4,
+			priority = $5,
+			min_interval_ms = $6,
+			fonnte_token = COALESCE($7, fonnte_token),
+			updated_at = now()
+		WHERE id = $1
+		RETURNING id, label, phone_number, fonnte_token, category, priority, active, min_interval_ms, created_at, updated_at
+	`, id, label, phoneNumber, category, priority, minIntervalMs, fonnteToken)
+	n, err := scanWANumber(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return n, err
+}
+
 // SetWANumberActive toggles a number on/off without deleting its history.
 func SetWANumberActive(ctx context.Context, pool *pgxpool.Pool, id string, active bool) error {
 	tag, err := pool.Exec(ctx, `UPDATE wa_numbers SET active = $2, updated_at = now() WHERE id = $1`, id, active)

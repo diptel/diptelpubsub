@@ -84,6 +84,7 @@ func main() {
 	// WhatsApp number management (hub-level Fonnte-connected senders) and message logs.
 	mux.Handle("GET /admin/wa-numbers", adminAuth(handlers.ListWANumbers(pool)))
 	mux.Handle("POST /admin/wa-numbers", adminAuth(handlers.CreateWANumber(pool)))
+	mux.Handle("PATCH /admin/wa-numbers/{id}", adminAuth(handlers.UpdateWANumber(pool)))
 	mux.Handle("POST /admin/wa-numbers/{id}/toggle", adminAuth(handlers.ToggleWANumber(pool)))
 	mux.Handle("DELETE /admin/wa-numbers/{id}", adminAuth(handlers.DeleteWANumber(pool)))
 	mux.Handle("GET /admin/wa-messages", adminAuth(handlers.ListWAMessages(pool)))

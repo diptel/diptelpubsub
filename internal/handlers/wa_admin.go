@@ -86,6 +86,66 @@ func CreateWANumber(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+type updateWANumberRequest struct {
+	Label         string  `json:"label"`
+	PhoneNumber   string  `json:"phone_number,omitempty"`
+	FonnteToken   *string `json:"fonnte_token,omitempty"` // omit/null to keep the existing token
+	Category      string  `json:"category"`
+	Priority      int     `json:"priority,omitempty"`
+	MinIntervalMs int     `json:"min_interval_ms,omitempty"`
+}
+
+// UpdateWANumber edits a WA number's label, phone number, category, priority and min interval —
+// e.g. to fix a typo'd phone number or give it a clearer label. The Fonnte token is left as-is
+// unless fonnte_token is explicitly sent (it's never returned by GET, so the panel's edit form
+// only sends it when the person actually typed a replacement).
+// PATCH /admin/wa-numbers/{id}
+func UpdateWANumber(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		var req updateWANumberRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if req.Label == "" {
+			writeError(w, http.StatusBadRequest, "label is required")
+			return
+		}
+		if req.Category != "otp" && req.Category != "general" && req.Category != "cs" {
+			writeError(w, http.StatusBadRequest, "category must be otp, general, or cs")
+			return
+		}
+		if req.Priority == 0 {
+			req.Priority = 100
+		}
+		if req.MinIntervalMs == 0 {
+			req.MinIntervalMs = 2000
+		}
+		if req.FonnteToken != nil && *req.FonnteToken == "" {
+			req.FonnteToken = nil // treat an empty string the same as "not sent"
+		}
+
+		n, err := db.UpdateWANumber(r.Context(), pool, id, req.Label, req.PhoneNumber, req.Category, req.Priority, req.MinIntervalMs, req.FonnteToken)
+		if err != nil {
+			if err == db.ErrNotFound {
+				writeError(w, http.StatusNotFound, "unknown WA number")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to update WA number: "+err.Error())
+			return
+		}
+		resp := waNumberResponse{
+			ID: n.ID, Label: n.Label, Category: n.Category, Priority: n.Priority,
+			Active: n.Active, MinIntervalMs: n.MinIntervalMs, CreatedAt: n.CreatedAt.Format("2006-01-02 15:04"),
+		}
+		if n.PhoneNumber != nil {
+			resp.PhoneNumber = *n.PhoneNumber
+		}
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
 type toggleWANumberRequest struct {
 	Active bool `json:"active"`
 }
