@@ -14,9 +14,14 @@ import (
 )
 
 // SessionIdleTimeout is how long a CS session can sit with no new message before it's treated
-// as closed (checked lazily — there's no cron job). "ketik MENU untuk ganti layanan" resets the
-// clock just like any other message.
-const SessionIdleTimeout = 24 * time.Hour
+// as closed. Checked two ways: lazily in GetActiveSession (when the customer messages again) and
+// proactively by handlers.CloseIdleSessions, run on a ticker from cmd/server/main.go, which is
+// what actually auto-closes (and notifies) a session the customer never comes back to. "ketik
+// MENU untuk ganti layanan" resets the clock just like any other message.
+//
+// A var, not a const, so main.go can override it at startup from the CS_SESSION_IDLE_HOURS env
+// var (config.CSSessionIdleHours) — 24h is just the default.
+var SessionIdleTimeout = 24 * time.Hour
 
 const csSessionColumns = `id, wa_number_id, phone, app_id, status, pending_menu, rating, opened_at, last_message_at, closed_at`
 
@@ -41,6 +46,32 @@ func GetActiveSession(ctx context.Context, pool *pgxpool.Pool, waNumberID, phone
 		return nil, ErrNotFound
 	}
 	return s, nil
+}
+
+// ListIdleSessions returns non-closed sessions that have sat past SessionIdleTimeout with no new
+// message, oldest first — for handlers.CloseIdleSessions' background sweep. Most idle sessions
+// never get another message from the customer, so this (not the lazy check in GetActiveSession)
+// is what actually closes and notifies the bulk of them.
+func ListIdleSessions(ctx context.Context, pool *pgxpool.Pool, limit int) ([]CSSession, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT `+csSessionColumns+` FROM cs_sessions
+		WHERE status != 'closed' AND last_message_at < now() - $1::interval
+		ORDER BY last_message_at LIMIT $2
+	`, SessionIdleTimeout.String(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []CSSession
+	for rows.Next() {
+		s, err := scanCSSessionRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *s)
+	}
+	return out, rows.Err()
 }
 
 // CreateCSSession opens a new "awaiting_service" session showing this menu (app IDs, in display

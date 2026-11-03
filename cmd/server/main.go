@@ -36,6 +36,8 @@ func main() {
 
 	bootstrapAdmin(ctx, pool, cfg)
 
+	db.SessionIdleTimeout = time.Duration(cfg.CSSessionIdleHours) * time.Hour
+
 	mux := http.NewServeMux()
 
 	// Health check for Docker/load balancer.
@@ -96,6 +98,10 @@ func main() {
 	mux.Handle("POST /admin/cs-sessions/{id}/reply", adminAuth(handlers.ReplyCSSession(pool, waLimiter)))
 	mux.Handle("POST /admin/cs-sessions/{id}/close", adminAuth(handlers.CloseCSSession(pool, waLimiter)))
 
+	// Background sweep: auto-closes CS Hub sessions idle past db.SessionIdleTimeout and notifies
+	// the customer, so a conversation nobody comes back to doesn't just sit "open" forever.
+	go runIdleSessionCloser(ctx, pool, waLimiter)
+
 	// The admin panel itself (static HTML/JS, embedded in the binary).
 	mux.Handle("/panel/", http.StripPrefix("/panel", panel.Handler()))
 	mux.Handle("GET /panel", http.RedirectHandler("/panel/", http.StatusMovedPermanently))
@@ -150,6 +156,24 @@ func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) 
 		return
 	}
 	log.Printf("pushhub: created initial admin account %q — log in at /panel/ to set up TOTP", cfg.AdminBootstrapUsername)
+}
+
+// runIdleSessionCloser periodically sweeps for CS Hub sessions idle past db.SessionIdleTimeout
+// and auto-closes them (see handlers.CloseIdleSessions). The check interval (15 minutes) is
+// independent of the idle timeout itself — frequent enough that a session doesn't sit closed-in-
+// all-but-name for long after crossing the threshold, cheap enough that it doesn't matter. Stops
+// when the server shuts down.
+func runIdleSessionCloser(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limiter) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			handlers.CloseIdleSessions(ctx, pool, limiter)
+		}
+	}
 }
 
 // withCORS allows each app's frontend (on its own domain) to call the public endpoints

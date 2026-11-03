@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 )
 
 // Config holds runtime configuration loaded from environment variables.
@@ -23,6 +24,10 @@ type Config struct {
 	SMTPPassword string
 	SMTPFrom     string
 	SMTPFromName string
+
+	// CS Hub: how many hours a session can sit with no new message before it's auto-closed (and
+	// the customer notified). CS_SESSION_IDLE_HOURS env var; defaults to 24.
+	CSSessionIdleHours int
 }
 
 func Load() Config {
@@ -41,6 +46,8 @@ func Load() Config {
 		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:     getEnv("SMTP_FROM", ""),
 		SMTPFromName: getEnv("SMTP_FROM_NAME", "Notification Hub"),
+
+		CSSessionIdleHours: getEnvInt("CS_SESSION_IDLE_HOURS", 24),
 	}
 }
 
@@ -49,4 +56,16 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
