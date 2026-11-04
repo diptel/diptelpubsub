@@ -140,8 +140,7 @@ func ListApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
 func RegenerateAppAPIKey(ctx context.Context, pool *pgxpool.Pool, slug, newAPIKey string) (*App, error) {
 	row := pool.QueryRow(ctx, `
 		UPDATE apps SET api_key = $2, updated_at = now() WHERE slug = $1
-		RETURNING id, slug, name, api_key, vapid_public_key, vapid_private_key, vapid_subject, webhook_url, created_at, updated_at
-	`, slug, newAPIKey)
+		RETURNING `+appColumns, slug, newAPIKey)
 	a, err := scanApp(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
