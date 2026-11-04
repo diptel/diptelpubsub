@@ -9,8 +9,12 @@ import (
 )
 
 // GenerateVAPIDKeys creates a new public/private VAPID keypair for a new tenant app.
+//
+// Perhatian: webpush-go mengembalikan (privateKey, publicKey) — urutannya dibalik di sini. Sebelum 5 Nov 2026
+// urutan ini tertukar sehingga kunci publik tenant berisi kunci rahasia (lihat migrations/0005_fix_vapid_swap.sql).
 func GenerateVAPIDKeys() (publicKey, privateKey string, err error) {
-	return webpush.GenerateVAPIDKeys()
+	priv, pub, err := webpush.GenerateVAPIDKeys()
+	return pub, priv, err
 }
 
 // Subscription mirrors the PushSubscription object a browser gives the frontend.
