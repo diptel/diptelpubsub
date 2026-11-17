@@ -222,3 +222,54 @@ func CloseCSSession(pool *pgxpool.Pool, limiter *wa.Limiter) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "closed"})
 	}
 }
+
+// aiPersonaMaxLen caps the staff-editable "Instruksi AI" text so a mistakenly pasted huge document
+// doesn't balloon every OpenAI request (and its cost) — plenty of room for real house-style notes.
+const aiPersonaMaxLen = 4000
+
+// GetAISettings returns AiSyah's current config for the panel's "Instruksi AI" tab: whether the
+// assistant can answer at all right now (API key configured + not kill-switched off) and the
+// staff-editable persona text appended to every system prompt (see cs_ai.go's AIPersona/aiSystemPrompt).
+// GET /admin/ai-settings
+func GetAISettings(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		persona, err := db.GetSetting(r.Context(), pool, "ai_persona")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load AI settings")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"assistant_name": AIAssistantName,
+			"active":         aiActive(),
+			"persona":        persona,
+		})
+	}
+}
+
+// UpdateAISettings saves a new persona instruction — a free-text addendum to AiSyah's system
+// prompt (tone, house rules, things to always/never mention) — so staff can tune how the
+// assistant talks without asking for a code change. Takes effect immediately: saved to
+// hub_settings AND pushed into the in-memory cache cs_ai.go reads from, no restart needed.
+// POST /admin/ai-settings
+func UpdateAISettings(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Persona string `json:"persona"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		persona := strings.TrimSpace(body.Persona)
+		if len(persona) > aiPersonaMaxLen {
+			writeError(w, http.StatusBadRequest, "instruksi terlalu panjang (maks 4000 karakter)")
+			return
+		}
+		if err := db.SetSetting(r.Context(), pool, "ai_persona", persona); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save AI settings")
+			return
+		}
+		SetAIPersonaCache(persona)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+	}
+}

@@ -390,9 +390,16 @@ Inbox panel.
   `CS_AI_ENABLED` (default `true`, saklar matikan tanpa menghapus API key).
 - **Prompt sistem** mengikutsertakan nama tenant (`cs_menu_label`) dan prefix referensinya, dan
   secara eksplisit melarang AI berpura-pura mengecek data pesanan/transaksi (AI tidak punya akses
-  ke database tenant) — kalau butuh itu atau pelanggan terlihat kesal, AI diarahkan bilang akan
-  diteruskan ke tim manusia (tapi tetap staf sendiri yang klik "Tangani"; AI tidak mengubah
-  `handled_by` secara otomatis).
+  ke database tenant) — kalau butuh itu atau pelanggan terlihat kurang puas, AI diarahkan bilang
+  akan diteruskan ke "tim kami" (bukan "tim manusia" — AI tidak membedakan diri dari staf di
+  depan pelanggan) untuk ditindaklanjuti (tapi tetap staf sendiri yang klik "Tangani"; AI tidak
+  mengubah `handled_by` secara otomatis).
+- **Instruksi tambahan bisa diedit dari panel** (tab **"Instruksi AI"**) — teks bebas (gaya
+  bicara, aturan khusus, hal yang boleh/tidak boleh disebutkan) yang ditambahkan ke prompt sistem
+  di atas, disimpan di tabel `hub_settings` (key `ai_persona`, lihat
+  `migrations/0006_hub_settings.sql`) lewat `GET/POST /admin/ai-settings`. Perubahan langsung
+  aktif (di-cache in-memory oleh `handlers.SetAIPersonaCache`, di-refresh tiap kali disimpan) —
+  tidak perlu redeploy untuk mengubah kepribadian/gaya bicara AiSyah.
 
 ## Struktur project
 
