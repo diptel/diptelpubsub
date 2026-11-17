@@ -75,16 +75,19 @@ type AdminSession struct {
 
 // CSSession is one WhatsApp help conversation on the CS number with one customer phone number.
 type CSSession struct {
-	ID            string
-	WANumberID    string
-	Phone         string
-	AppID         *string  // NULL while Status == "awaiting_service"
-	Status        string   // "awaiting_service" | "open" | "closed"
-	PendingMenu   []string // app IDs, in the order last shown to the customer
-	Rating        *int
-	OpenedAt      time.Time
-	LastMessageAt time.Time
-	ClosedAt      *time.Time
+	ID             string
+	WANumberID     string
+	Phone          string
+	AppID          *string  // NULL while Status == "awaiting_service"
+	Status         string   // "awaiting_service" | "open" | "closed"
+	PendingMenu    []string // app IDs, in the order last shown to the customer
+	Rating         *int
+	OpenedAt       time.Time
+	LastMessageAt  time.Time
+	ClosedAt       *time.Time
+	HandledBy      string  // "ai" | "staff" — who answers next in this session; see internal/handlers/cs_ai.go
+	HandledByLabel *string // staff username who clicked "Tangani"; NULL while HandledBy == "ai"
+	TakenOverAt    *time.Time
 }
 
 type CSMessage struct {

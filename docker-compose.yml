@@ -43,6 +43,15 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Notification Hub}
+      # CS Hub idle timeout (hours) — see CS Hub section below.
+      CS_SESSION_IDLE_HOURS: ${CS_SESSION_IDLE_HOURS:-24}
+      # CS Hub AI assistant ("AiSyah" by default) — answers new CS sessions automatically via
+      # OpenAI until a staff member takes over from the panel ("Tangani"). Leave OPENAI_API_KEY
+      # blank to disable it entirely — sessions still work, staff just answer every one manually.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      AI_ASSISTANT_NAME: ${AI_ASSISTANT_NAME:-AiSyah}
+      CS_AI_ENABLED: ${CS_AI_ENABLED:-true}
     ports:
       - "${HOST_PORT:-8080}:8080"
     networks:

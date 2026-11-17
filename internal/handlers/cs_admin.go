@@ -12,14 +12,16 @@ import (
 )
 
 type csSessionItem struct {
-	ID            string `json:"id"`
-	Phone         string `json:"phone"`
-	AppID         string `json:"app_id,omitempty"`
-	AppName       string `json:"app_name,omitempty"`
-	Status        string `json:"status"`
-	OpenedAt      string `json:"opened_at"`
-	LastMessageAt string `json:"last_message_at"`
-	ClosedAt      string `json:"closed_at,omitempty"`
+	ID             string `json:"id"`
+	Phone          string `json:"phone"`
+	AppID          string `json:"app_id,omitempty"`
+	AppName        string `json:"app_name,omitempty"`
+	Status         string `json:"status"`
+	OpenedAt       string `json:"opened_at"`
+	LastMessageAt  string `json:"last_message_at"`
+	ClosedAt       string `json:"closed_at,omitempty"`
+	HandledBy      string `json:"handled_by"`                 // "ai" | "staff" — lihat internal/handlers/cs_ai.go
+	HandledByLabel string `json:"handled_by_label,omitempty"` // username staf yang klik "Tangani"
 }
 
 // ListCSSessions returns CS Hub sessions for the panel inbox, newest activity first.
@@ -40,9 +42,12 @@ func ListCSSessions(pool *pgxpool.Pool) http.HandlerFunc {
 		out := make([]csSessionItem, 0, len(sessions))
 		for _, s := range sessions {
 			item := csSessionItem{
-				ID: s.ID, Phone: s.Phone, Status: s.Status,
+				ID: s.ID, Phone: s.Phone, Status: s.Status, HandledBy: s.HandledBy,
 				OpenedAt:      s.OpenedAt.Format("2006-01-02 15:04"),
 				LastMessageAt: s.LastMessageAt.Format("2006-01-02 15:04"),
+			}
+			if s.HandledByLabel != nil {
+				item.HandledByLabel = *s.HandledByLabel
 			}
 			if s.ClosedAt != nil {
 				item.ClosedAt = s.ClosedAt.Format("2006-01-02 15:04")
@@ -133,6 +138,48 @@ func ReplyCSSession(pool *pgxpool.Pool, limiter *wa.Limiter) http.HandlerFunc {
 		_ = db.TouchSession(r.Context(), pool, session.ID)
 
 		writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+	}
+}
+
+// handoverText is what AiSyah tells the customer the moment a staff member clicks "Tangani" —
+// so the handover is visible on their end too, not just a silent change in who answers next.
+const handoverText = "Baik, saya panggilkan tim CS kami untuk membantu lebih lanjut ya. Mohon tunggu sebentar \U0001F64F"
+
+// TakeOverCSSession lets a staff member take over an AI-handled ("AiSyah") session from the
+// panel. The AI assistant stops auto-replying in this session immediately (continueOpenSession
+// in cs_bot.go checks handled_by before calling it) — the rest of the conversation, including
+// everything AiSyah already said, stays in the same thread for staff to continue from. Only an
+// "open" session can be taken over; db.TakeOverSession returns ErrNotFound otherwise (e.g. the
+// customer hasn't picked a service yet, or the session is already closed).
+// POST /admin/cs-sessions/{id}/handle
+func TakeOverCSSession(pool *pgxpool.Pool, limiter *wa.Limiter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+
+		label := "admin"
+		if u := middleware.AdminUserFromContext(r.Context()); u != nil {
+			label = u.Username
+		}
+
+		session, err := db.TakeOverSession(r.Context(), pool, id, label)
+		if err != nil {
+			if err == db.ErrNotFound {
+				writeError(w, http.StatusNotFound, "sesi tidak ditemukan atau belum bisa diambil alih (belum pilih layanan / sudah selesai)")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to take over session")
+			return
+		}
+
+		// Best-effort notify, same reasoning as CloseCSSession below: staff already took over
+		// either way, a WA send failure shouldn't turn into an error response.
+		if number, numErr := db.GetWANumberByID(r.Context(), pool, session.WANumberID); numErr == nil {
+			sendFromHub(r.Context(), pool, limiter, number, session.Phone, handoverText, "cs")
+			aiLabel := AIAssistantName
+			_ = db.AppendCSMessage(r.Context(), pool, session.ID, "out", &aiLabel, handoverText)
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "handled", "handled_by": session.HandledBy})
 	}
 }
 

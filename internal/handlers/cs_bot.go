@@ -52,8 +52,9 @@ func startNewCSSession(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limi
 			log.Printf("pushhub: cs hub: failed to set session app: %v", serr)
 			return
 		}
-		reply := fmt.Sprintf("Anda terhubung dengan CS %s. Tuliskan kendala Anda beserta nomor pesanan/transaksi (jika ada).", csMenuLabel(app))
-		_ = db.AppendCSMessage(ctx, pool, s.ID, "out", nil, reply)
+		reply := aiGreeting(csMenuLabel(app))
+		aiLabel := AIAssistantName
+		_ = db.AppendCSMessage(ctx, pool, s.ID, "out", &aiLabel, reply)
 		sendFromHub(ctx, pool, limiter, number, phone, reply, "cs")
 		return
 	}
@@ -70,19 +71,21 @@ func startNewCSSession(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limi
 		log.Printf("pushhub: cs hub: failed to create session: %v", cerr)
 		return
 	}
+	aiLabel := AIAssistantName
 	_ = db.AppendCSMessage(ctx, pool, s.ID, "in", nil, message)
-	_ = db.AppendCSMessage(ctx, pool, s.ID, "out", nil, menuText)
+	_ = db.AppendCSMessage(ctx, pool, s.ID, "out", &aiLabel, menuText)
 	sendFromHub(ctx, pool, limiter, number, phone, menuText, "cs")
 }
 
 func continueServiceSelection(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Limiter, number *db.WANumber, session *db.CSSession, message string) {
 	_ = db.AppendCSMessage(ctx, pool, session.ID, "in", nil, message)
+	aiLabel := AIAssistantName
 
 	if strings.EqualFold(strings.TrimSpace(message), "menu") {
 		apps, _ := db.ListCSEnabledApps(ctx, pool)
 		ids, menuText := buildMenu(apps)
 		_, _ = db.ResetSessionToMenu(ctx, pool, session.ID, ids)
-		_ = db.AppendCSMessage(ctx, pool, session.ID, "out", nil, menuText)
+		_ = db.AppendCSMessage(ctx, pool, session.ID, "out", &aiLabel, menuText)
 		sendFromHub(ctx, pool, limiter, number, session.Phone, menuText, "cs")
 		return
 	}
@@ -96,7 +99,7 @@ func continueServiceSelection(ctx context.Context, pool *pgxpool.Pool, limiter *
 
 	if chosenAppID == "" {
 		reply := "Mohon balas dengan nomor layanan yang sesuai, atau ketik MENU untuk melihat pilihan lagi."
-		_ = db.AppendCSMessage(ctx, pool, session.ID, "out", nil, reply)
+		_ = db.AppendCSMessage(ctx, pool, session.ID, "out", &aiLabel, reply)
 		sendFromHub(ctx, pool, limiter, number, session.Phone, reply, "cs")
 		return
 	}
@@ -110,8 +113,8 @@ func continueServiceSelection(ctx context.Context, pool *pgxpool.Pool, limiter *
 		log.Printf("pushhub: cs hub: failed to set session app: %v", serr)
 		return
 	}
-	reply := fmt.Sprintf("Anda terhubung dengan CS %s. Tuliskan kendala Anda beserta nomor pesanan/transaksi (jika ada).", csMenuLabel(app))
-	_ = db.AppendCSMessage(ctx, pool, session.ID, "out", nil, reply)
+	reply := aiGreeting(csMenuLabel(app))
+	_ = db.AppendCSMessage(ctx, pool, session.ID, "out", &aiLabel, reply)
 	sendFromHub(ctx, pool, limiter, number, session.Phone, reply, "cs")
 }
 
@@ -121,15 +124,20 @@ func continueOpenSession(ctx context.Context, pool *pgxpool.Pool, limiter *wa.Li
 		apps, _ := db.ListCSEnabledApps(ctx, pool)
 		ids, menuText := buildMenu(apps)
 		_, _ = db.ResetSessionToMenu(ctx, pool, session.ID, ids)
-		_ = db.AppendCSMessage(ctx, pool, session.ID, "out", nil, menuText)
+		aiLabel := AIAssistantName
+		_ = db.AppendCSMessage(ctx, pool, session.ID, "out", &aiLabel, menuText)
 		sendFromHub(ctx, pool, limiter, number, session.Phone, menuText, "cs")
 		return
 	}
 
-	// Ordinary message in an open session: just record it for the panel inbox and bump the idle
-	// clock. A staff member answers from the panel — the bot doesn't auto-reply here.
+	// Ordinary message in an open session: record it for the panel inbox and bump the idle
+	// clock either way. If AiSyah is still handling this session (handled_by == 'ai'), kick off
+	// an async AI reply; once staff clicks "Tangani" (TakeOverCSSession in cs_admin.go),
+	// handled_by flips to 'staff' and maybeReplyWithAI below becomes a no-op for this session —
+	// a human answers from the panel instead.
 	_ = db.AppendCSMessage(ctx, pool, session.ID, "in", nil, message)
 	_ = db.TouchSession(ctx, pool, session.ID)
+	maybeReplyWithAI(pool, limiter, number, session)
 
 	// Optional: forward to the tenant's own webhook so their backend can attach order context.
 	// Purely informational now that tenants no longer run their own reply bot on this channel.
@@ -176,7 +184,7 @@ func csMenuLabel(app *db.App) string {
 // (stored as the session's pending_menu so a later "2" can be resolved back to a tenant).
 func buildMenu(apps []db.App) ([]string, string) {
 	var b strings.Builder
-	b.WriteString("Halo! Anda ingin bantuan untuk layanan apa?\n")
+	b.WriteString(aiMenuHeader())
 	ids := make([]string, 0, len(apps))
 	for i, app := range apps {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, csMenuLabel(&app))
