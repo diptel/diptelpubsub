@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,6 +29,33 @@ var (
 	AIAssistantName = "AiSyah"
 	AIEnabled       = true
 )
+
+// aiPersona is a free-text instruction staff can edit from the panel ("Instruksi AI" tab) — tone,
+// house rules, things to always/never say — appended to every aiSystemPrompt call, so adjusting
+// AiSyah's personality no longer requires a code change and redeploy. Loaded from hub_settings
+// (key "ai_persona") at startup by main.go, and kept in sync in memory whenever a staff member
+// saves a new value via UpdateAISettings in cs_admin.go — a mutex because it's read from the
+// per-message AI goroutines and written from an HTTP handler goroutine.
+var (
+	aiPersonaMu sync.RWMutex
+	aiPersona   string
+)
+
+// SetAIPersonaCache updates the in-memory persona instruction, called once at startup (main.go,
+// loaded from the database) and again every time it's saved from the panel (cs_admin.go) — so a
+// save takes effect immediately, with no restart needed.
+func SetAIPersonaCache(v string) {
+	aiPersonaMu.Lock()
+	aiPersona = v
+	aiPersonaMu.Unlock()
+}
+
+// AIPersona returns the current persona instruction (possibly empty — nothing saved yet).
+func AIPersona() string {
+	aiPersonaMu.RLock()
+	defer aiPersonaMu.RUnlock()
+	return aiPersona
+}
 
 // aiActive reports whether the AI assistant should be answering right now at all (global
 // kill-switch and API key configured) — a per-session check (handled_by, status) still applies
@@ -135,7 +163,7 @@ func aiSystemPrompt(appLabel, refPrefix string) string {
 	if refPrefix != "" {
 		refNote = fmt.Sprintf(" (biasanya berformat %s...)", refPrefix)
 	}
-	return fmt.Sprintf(
+	prompt := fmt.Sprintf(
 		"Kamu adalah %s, asisten layanan pelanggan resmi untuk %s, bagian dari ekosistem BRIIX. "+
 			"Gunakan Bahasa Indonesia yang sopan, hangat, dan profesional, selayaknya staf customer service perusahaan — ringkas dan jelas, tanpa istilah teknis atau singkatan yang membingungkan pelanggan. "+
 			"Jika pelanggan sudah menyebutkan nomor pesanan/transaksi%s, akui nomor tersebut dengan baik dan jangan menanyakannya ulang. "+
@@ -144,4 +172,11 @@ func aiSystemPrompt(appLabel, refPrefix string) string {
 			"sampaikan dengan sopan bahwa keluhannya akan diteruskan kepada tim kami untuk ditindaklanjuti lebih lanjut, lalu hentikan upaya penyelesaian sendiri — jangan menyebut dirimu sebagai AI/robot atau membedakan diri dari \"tim manusia\"; cukup sebut \"tim kami\" seolah bagian dari satu tim layanan pelanggan yang sama.",
 		AIAssistantName, appLabel, refNote,
 	)
+	// Staff-editable addendum (panel tab "Instruksi AI") — house style, extra dos/don'ts, anything
+	// that shouldn't require a code change. Appended last so it can refine but not be silently
+	// dropped by the base prompt above; AIPersona() is "" until someone saves one from the panel.
+	if persona := strings.TrimSpace(AIPersona()); persona != "" {
+		prompt += "\n\nInstruksi tambahan dari admin (ikuti juga ini):\n" + persona
+	}
+	return prompt
 }

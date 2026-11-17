@@ -54,6 +54,15 @@ func main() {
 		log.Printf("pushhub: CS Hub AI assistant %q active (model %s)", cfg.AIAssistantName, cfg.OpenAIModel)
 	}
 
+	// Staff-editable persona instruction (panel tab "Instruksi AI") — loaded once here so the
+	// first message after a restart already uses whatever was last saved; UpdateAISettings keeps
+	// the in-memory copy current after that without needing another restart.
+	if persona, perr := db.GetSetting(ctx, pool, "ai_persona"); perr != nil {
+		log.Printf("pushhub: could not load AI persona setting (hub_settings): %v", perr)
+	} else {
+		handlers.SetAIPersonaCache(persona)
+	}
+
 	mux := http.NewServeMux()
 
 	// Health check for Docker/load balancer.
@@ -114,6 +123,11 @@ func main() {
 	mux.Handle("POST /admin/cs-sessions/{id}/reply", adminAuth(handlers.ReplyCSSession(pool, waLimiter)))
 	mux.Handle("POST /admin/cs-sessions/{id}/handle", adminAuth(handlers.TakeOverCSSession(pool, waLimiter)))
 	mux.Handle("POST /admin/cs-sessions/{id}/close", adminAuth(handlers.CloseCSSession(pool, waLimiter)))
+
+	// CS Hub AI assistant settings: staff-editable persona/instructions, applied immediately (see
+	// handlers.SetAIPersonaCache) without needing a redeploy.
+	mux.Handle("GET /admin/ai-settings", adminAuth(handlers.GetAISettings(pool)))
+	mux.Handle("POST /admin/ai-settings", adminAuth(handlers.UpdateAISettings(pool)))
 
 	// Background sweep: auto-closes CS Hub sessions idle past db.SessionIdleTimeout and notifies
 	// the customer, so a conversation nobody comes back to doesn't just sit "open" forever.
