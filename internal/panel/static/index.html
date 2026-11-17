@@ -275,8 +275,8 @@
 
   <!-- CS Inbox tab -->
   <div id="tab-cs-inbox" class="tab-panel">
-    <div class="card" style="display:flex; gap:16px; align-items:stretch; min-height:420px;">
-      <div style="flex:1 1 340px; max-width:380px; display:flex; flex-direction:column;">
+    <div class="card" style="display:flex; gap:16px; align-items:stretch; height:calc(100vh - 230px); min-height:420px; overflow:hidden;">
+      <div style="flex:1 1 340px; max-width:380px; display:flex; flex-direction:column; min-height:0;">
         <div class="topbar" style="margin-bottom:12px;">
           <h2 style="margin:0;">Sesi CS</h2>
           <button class="btn-secondary btn-small" id="btn-refresh-cs-sessions">Refresh</button>
@@ -287,12 +287,12 @@
           <option value="open" selected>Sedang terhubung</option>
           <option value="closed">Selesai</option>
         </select>
-        <div id="cs-sessions-list" style="overflow-y:auto; flex:1;"></div>
+        <div id="cs-sessions-list" style="overflow-y:auto; flex:1; min-height:0;"></div>
         <p class="sub" id="cs-sessions-empty" style="margin-top:12px;">Belum ada sesi CS.</p>
       </div>
-      <div style="flex:2 1 500px; display:flex; flex-direction:column; border-left:1px solid var(--border); padding-left:16px;">
+      <div style="flex:2 1 500px; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); padding-left:16px;">
         <div id="cs-chat-empty" class="sub">Pilih sesi di sebelah kiri untuk melihat percakapan.</div>
-        <div id="cs-chat-view" class="hidden" style="display:flex; flex-direction:column; height:100%;">
+        <div id="cs-chat-view" class="hidden" style="display:flex; flex-direction:column; height:100%; min-height:0;">
           <div class="topbar" style="margin-bottom:12px;">
             <h2 style="margin:0;" id="cs-chat-title"></h2>
             <div>
@@ -301,7 +301,7 @@
             </div>
           </div>
           <div class="sub" id="cs-chat-handled-by" style="margin:-6px 0 10px;"></div>
-          <div id="cs-chat-messages" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
+          <div id="cs-chat-messages" style="flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
           <div class="row">
             <input id="cs-reply-input" placeholder="Tulis balasan…" />
             <button class="btn-primary" id="btn-send-cs-reply" style="margin-top:0; width:auto;">Kirim</button>
@@ -933,6 +933,7 @@ async function openCSChat(session) {
   $('cs-chat-view').classList.remove('hidden');
   $('cs-chat-title').textContent = `${session.phone} — ${session.app_name || 'belum pilih layanan'}`;
   renderCSHandledState(session);
+  csChatMessageCount = -1; // force scroll-to-bottom on open, even if msg count happens to match the last-viewed session
   await refreshCSMessages(session.id);
   startCSMessagesPolling(session.id);
 }
