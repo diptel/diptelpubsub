@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"pushhub/internal/aiassist"
 	"pushhub/internal/auth"
 	"pushhub/internal/config"
 	"pushhub/internal/db"
@@ -38,21 +37,6 @@ func main() {
 	bootstrapAdmin(ctx, pool, cfg)
 
 	db.SessionIdleTimeout = time.Duration(cfg.CSSessionIdleHours) * time.Hour
-
-	// CS Hub AI assistant ("AiSyah" by default). AIClient is still constructed even with an empty
-	// API key — aiassist.Client.Enabled() just reports false, so the assistant silently stays out
-	// of the conversation and staff answer manually; this is a normal supported state, not an
-	// error worth refusing to start over.
-	handlers.AIEnabled = cfg.CSAIEnabled
-	handlers.AIAssistantName = cfg.AIAssistantName
-	handlers.AIClient = aiassist.New(cfg.OpenAIAPIKey, cfg.OpenAIModel)
-	if cfg.OpenAIAPIKey == "" {
-		log.Println("pushhub: WARNING OPENAI_API_KEY not set — CS Hub AI assistant (AiSyah) will stay silent; staff must answer every session manually from the panel")
-	} else if !cfg.CSAIEnabled {
-		log.Println("pushhub: CS Hub AI assistant disabled via CS_AI_ENABLED=false")
-	} else {
-		log.Printf("pushhub: CS Hub AI assistant %q active (model %s)", cfg.AIAssistantName, cfg.OpenAIModel)
-	}
 
 	mux := http.NewServeMux()
 
@@ -112,7 +96,6 @@ func main() {
 	mux.Handle("GET /admin/cs-sessions", adminAuth(handlers.ListCSSessions(pool)))
 	mux.Handle("GET /admin/cs-sessions/{id}/messages", adminAuth(handlers.GetCSSessionMessages(pool)))
 	mux.Handle("POST /admin/cs-sessions/{id}/reply", adminAuth(handlers.ReplyCSSession(pool, waLimiter)))
-	mux.Handle("POST /admin/cs-sessions/{id}/handle", adminAuth(handlers.TakeOverCSSession(pool, waLimiter)))
 	mux.Handle("POST /admin/cs-sessions/{id}/close", adminAuth(handlers.CloseCSSession(pool, waLimiter)))
 
 	// Background sweep: auto-closes CS Hub sessions idle past db.SessionIdleTimeout and notifies

@@ -23,7 +23,7 @@ import (
 // var (config.CSSessionIdleHours) — 24h is just the default.
 var SessionIdleTimeout = 24 * time.Hour
 
-const csSessionColumns = `id, wa_number_id, phone, app_id, status, pending_menu, rating, opened_at, last_message_at, closed_at, handled_by, handled_by_label, taken_over_at`
+const csSessionColumns = `id, wa_number_id, phone, app_id, status, pending_menu, rating, opened_at, last_message_at, closed_at`
 
 // GetActiveSession returns the customer's current non-closed session on this CS number, or
 // ErrNotFound if there isn't one — including when the only session found has gone idle past
@@ -134,26 +134,6 @@ func CloseSession(ctx context.Context, pool *pgxpool.Pool, sessionID string) err
 	return nil
 }
 
-// TakeOverSession lets a staff member take over an AI-handled session from the panel (the
-// "Tangani" button). It only succeeds on a currently "open" session (nothing to take over from
-// one still awaiting_service or already closed) — callers treat ErrNotFound as "can't take over
-// right now" and show that to the staff member. Once handled_by is "staff", the CS Hub AI
-// assistant stops auto-replying in this session (see internal/handlers/cs_ai.go); closing the
-// session is what hands control back to the AI, since a new complaint always opens a fresh
-// session that starts on handled_by='ai' by column default.
-func TakeOverSession(ctx context.Context, pool *pgxpool.Pool, sessionID, staffLabel string) (*CSSession, error) {
-	row := pool.QueryRow(ctx, `
-		UPDATE cs_sessions
-		SET handled_by = 'staff', handled_by_label = $2, taken_over_at = now(), last_message_at = now()
-		WHERE id = $1 AND status = 'open'
-		RETURNING `+csSessionColumns, sessionID, staffLabel)
-	s, err := scanCSSession(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return s, err
-}
-
 // GetCSSession looks up one session by ID, e.g. for the panel's conversation view or a staff reply.
 func GetCSSession(ctx context.Context, pool *pgxpool.Pool, sessionID string) (*CSSession, error) {
 	row := pool.QueryRow(ctx, `SELECT `+csSessionColumns+` FROM cs_sessions WHERE id = $1`, sessionID)
@@ -192,7 +172,7 @@ func ListCSSessions(ctx context.Context, pool *pgxpool.Pool, status, appID strin
 func scanCSSession(row pgx.Row) (*CSSession, error) {
 	var s CSSession
 	var menuJSON []byte
-	err := row.Scan(&s.ID, &s.WANumberID, &s.Phone, &s.AppID, &s.Status, &menuJSON, &s.Rating, &s.OpenedAt, &s.LastMessageAt, &s.ClosedAt, &s.HandledBy, &s.HandledByLabel, &s.TakenOverAt)
+	err := row.Scan(&s.ID, &s.WANumberID, &s.Phone, &s.AppID, &s.Status, &menuJSON, &s.Rating, &s.OpenedAt, &s.LastMessageAt, &s.ClosedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +185,7 @@ func scanCSSession(row pgx.Row) (*CSSession, error) {
 func scanCSSessionRows(rows pgx.Rows) (*CSSession, error) {
 	var s CSSession
 	var menuJSON []byte
-	err := rows.Scan(&s.ID, &s.WANumberID, &s.Phone, &s.AppID, &s.Status, &menuJSON, &s.Rating, &s.OpenedAt, &s.LastMessageAt, &s.ClosedAt, &s.HandledBy, &s.HandledByLabel, &s.TakenOverAt)
+	err := rows.Scan(&s.ID, &s.WANumberID, &s.Phone, &s.AppID, &s.Status, &menuJSON, &s.Rating, &s.OpenedAt, &s.LastMessageAt, &s.ClosedAt)
 	if err != nil {
 		return nil, err
 	}

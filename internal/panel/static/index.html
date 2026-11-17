@@ -294,12 +294,8 @@
         <div id="cs-chat-view" class="hidden" style="display:flex; flex-direction:column; height:100%;">
           <div class="topbar" style="margin-bottom:12px;">
             <h2 style="margin:0;" id="cs-chat-title"></h2>
-            <div>
-              <button class="btn-primary btn-small" id="btn-handle-cs-session" style="margin-top:0; width:auto;">Tangani</button>
-              <button class="btn-danger btn-small" id="btn-close-cs-session">Tandai Selesai</button>
-            </div>
+            <button class="btn-danger btn-small" id="btn-close-cs-session">Tandai Selesai</button>
           </div>
-          <div class="sub" id="cs-chat-handled-by" style="margin:-6px 0 10px;"></div>
           <div id="cs-chat-messages" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
           <div class="row">
             <input id="cs-reply-input" placeholder="Tulis balasan…" />
@@ -831,7 +827,6 @@ $('btn-refresh-email-messages').addEventListener('click', loadEmailMessages);
 
 // --- CS Inbox ---
 let csActiveSessionId = null;
-let csActiveSession = null;
 let csSessionsCache = [];
 
 async function loadCSSessions() {
@@ -846,13 +841,9 @@ async function loadCSSessions() {
     row.className = 'card';
     row.style = 'padding:10px 12px; margin-bottom:8px; cursor:pointer;' + (s.id === csActiveSessionId ? ' border-color: var(--accent);' : '');
     const statusLabel = { awaiting_service: 'menunggu pilih layanan', open: 'terhubung', closed: 'selesai' }[s.status] || s.status;
-    const handledPill = s.status === 'closed' ? '' : (s.handled_by === 'staff'
-      ? `<span class="pill" style="margin-left:4px; background:var(--accent-dark);">staf${s.handled_by_label ? ': ' + escapeHtml(s.handled_by_label) : ''}</span>`
-      : `<span class="pill" style="margin-left:4px;">AiSyah</span>`);
     row.innerHTML = `
       <strong>${escapeHtml(s.phone)}</strong>
       <span class="pill" style="margin-left:6px;">${escapeHtml(s.app_name || statusLabel)}</span>
-      ${handledPill}
       <div class="sub" style="margin:4px 0 0;">${escapeHtml(statusLabel)} · ${escapeHtml(s.last_message_at)}</div>
     `;
     row.addEventListener('click', () => openCSChat(s));
@@ -862,25 +853,12 @@ async function loadCSSessions() {
 $('btn-refresh-cs-sessions').addEventListener('click', loadCSSessions);
 $('cs-filter-status').addEventListener('change', loadCSSessions);
 
-function renderCSHandledState(session) {
-  const isStaff = session.handled_by === 'staff';
-  $('cs-chat-handled-by').textContent = session.status === 'closed'
-    ? ''
-    : (isStaff
-        ? `Sedang ditangani staf${session.handled_by_label ? ' (' + session.handled_by_label + ')' : ''} — AiSyah tidak menjawab di sesi ini.`
-        : 'Dijawab otomatis oleh AiSyah.');
-  // "Tangani" hanya berguna pada sesi yang masih terhubung (open) dan masih dijawab AI.
-  $('btn-handle-cs-session').classList.toggle('hidden', session.status !== 'open' || isStaff);
-}
-
 async function openCSChat(session) {
   csActiveSessionId = session.id;
-  csActiveSession = session;
   loadCSSessions(); // re-render list with highlight
   $('cs-chat-empty').classList.add('hidden');
   $('cs-chat-view').classList.remove('hidden');
   $('cs-chat-title').textContent = `${session.phone} — ${session.app_name || 'belum pilih layanan'}`;
-  renderCSHandledState(session);
   await refreshCSMessages(session.id);
 }
 
@@ -919,23 +897,6 @@ $('cs-reply-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('btn-send-cs-reply').click();
 });
 
-$('btn-handle-cs-session').addEventListener('click', async () => {
-  if (!csActiveSessionId) return;
-  if (!confirm('Ambil alih percakapan ini dari AiSyah? AiSyah akan berhenti menjawab di sesi ini.')) return;
-  try {
-    const res = await api(`/admin/cs-sessions/${csActiveSessionId}/handle`, { method: 'POST' });
-    toast('Sesi diambil alih — AiSyah berhenti menjawab di sini');
-    if (csActiveSession) {
-      csActiveSession.handled_by = res.handled_by || 'staff';
-      renderCSHandledState(csActiveSession);
-    }
-    await refreshCSMessages(csActiveSessionId);
-    loadCSSessions();
-  } catch (e) {
-    toast('Gagal: ' + e.message);
-  }
-});
-
 $('btn-close-cs-session').addEventListener('click', async () => {
   if (!csActiveSessionId) return;
   if (!confirm('Tandai sesi ini selesai?')) return;
@@ -943,7 +904,6 @@ $('btn-close-cs-session').addEventListener('click', async () => {
     await api(`/admin/cs-sessions/${csActiveSessionId}/close`, { method: 'POST' });
     toast('Sesi ditutup');
     csActiveSessionId = null;
-    csActiveSession = null;
     $('cs-chat-view').classList.add('hidden');
     $('cs-chat-empty').classList.remove('hidden');
     loadCSSessions();

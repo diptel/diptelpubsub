@@ -353,46 +353,13 @@ Bot CS (`internal/handlers/cs_bot.go`):
    tombol "CS Hub" di tab Apps), atau langsung terhubung ke satu tenant kalau pesan mengandung
    prefix referensinya (`cs_ref_prefix`, mis. `"KLR-"` cocok dengan `"KLR-123 belum sukses"` —
    juga cocok untuk link `wa.me/<nomor cs>?text=...KLR-123`).
-2. Sesi terbuka → pesan berikutnya dijawab otomatis oleh **asisten AI ("AiSyah")**, lihat bagian
-   di bawah, sampai staf mengambil alih dari tab **CS Inbox** di panel. Ketik `MENU` untuk ganti
-   layanan.
+2. Sesi terbuka → pesan berikutnya masuk ke percakapan itu; staf membalas dari tab **CS Inbox**
+   di panel (bukan bot). Ketik `MENU` untuk ganti layanan.
 3. Sesi otomatis dianggap selesai kalau tidak ada pesan baru selama 24 jam (dicek malas, saat
    pesan baru masuk atau sesi dibuka di panel — tidak ada cron job terpisah).
 
 Tiap tenant diatur lewat `POST /admin/apps/{slug}/cs` (atau tombol "CS Hub" di panel):
 `{ "cs_enabled": true, "cs_menu_label": "Kliro", "cs_ref_prefix": "KLR-" }`.
-
-### Asisten AI CS Hub ("AiSyah")
-
-Setiap sesi CS baru otomatis dijawab oleh asisten AI (nama default **AiSyah**, lihat
-`AI_ASSISTANT_NAME`) lewat OpenAI Chat Completions (`internal/aiassist`, dipanggil dari
-`internal/handlers/cs_ai.go`), bukan oleh staf — sampai staf mengklik **"Tangani"** di tab CS
-Inbox panel.
-
-- **Kolom `cs_sessions.handled_by`** (`'ai'` default | `'staff'`) menentukan siapa yang
-  menjawab pesan berikutnya di satu sesi. AI hanya auto-reply kalau `handled_by = 'ai'` **dan**
-  status sesi `open` — dicek ulang persis sebelum memanggil OpenAI dan sekali lagi persis
-  sebelum kirim balasan, supaya tidak pernah menimpa balasan staf yang baru saja mengambil alih.
-- **Tombol "Tangani"** (`POST /admin/cs-sessions/{id}/handle`) hanya berlaku untuk sesi
-  berstatus `open`. Begitu diklik: AI langsung berhenti menjawab di sesi itu, pelanggan diberi
-  tahu ("Baik, saya panggilkan tim CS kami…"), dan riwayat percakapan AI sebelumnya tetap ada di
-  thread yang sama untuk dilanjutkan staf — tidak ada percakapan baru/terpisah.
-- **Riwayat tetap gabung**: `cs_messages` tidak dipisah per pengirim (AI/staf/pelanggan) — hanya
-  `sender_label` yang membedakan ("AiSyah" untuk balasan AI, username staf untuk balasan manual,
-  kosong untuk pesan sistem seperti menu/penutupan sesi).
-- **AI aktif lagi otomatis**: tidak ada tombol "kembalikan ke AI" terpisah — menutup sesi
-  (**"Tandai Selesai"**, seperti biasa) sudah cukup, karena komplain/sesi baru selalu dibuat
-  dengan `handled_by = 'ai'` (default kolom), jadi AiSyah otomatis menjawab lagi untuk pelanggan
-  yang chat lagi nanti.
-- **Konfigurasi** (env var, lihat `.env.example`): `OPENAI_API_KEY` (kosongkan untuk mematikan
-  AI sepenuhnya — CS Hub tetap jalan seperti biasa, staf membalas manual semua sesi),
-  `OPENAI_MODEL` (default `gpt-4o-mini`), `AI_ASSISTANT_NAME` (default `AiSyah`),
-  `CS_AI_ENABLED` (default `true`, saklar matikan tanpa menghapus API key).
-- **Prompt sistem** mengikutsertakan nama tenant (`cs_menu_label`) dan prefix referensinya, dan
-  secara eksplisit melarang AI berpura-pura mengecek data pesanan/transaksi (AI tidak punya akses
-  ke database tenant) — kalau butuh itu atau pelanggan terlihat kesal, AI diarahkan bilang akan
-  diteruskan ke tim manusia (tapi tetap staf sendiri yang klik "Tangani"; AI tidak mengubah
-  `handled_by` secara otomatis).
 
 ## Struktur project
 
@@ -403,7 +370,6 @@ internal/db/                 - koneksi Postgres + query (apps, subscriptions, wa
 internal/push/                - generate VAPID key, kirim Web Push
 internal/wa/                   - kirim WhatsApp via Fonnte + rate limiter per nomor
 internal/emailsend/             - kirim email via SMTP (net/smtp stdlib)
-internal/aiassist/              - panggil OpenAI Chat Completions untuk asisten AI CS Hub ("AiSyah")
 internal/auth/                - bcrypt password hashing, generate/validasi TOTP, render QR code
 internal/middleware/         - auth (X-API-Key per tenant, admin token, session cookie panel)
 internal/handlers/           - HTTP handlers (push, wa, email, wa_webhook, admin, wa_admin, cs_bot, cs_admin)
