@@ -169,6 +169,7 @@
     <button class="tab-btn" data-tab="tab-wa-messages">Log WhatsApp</button>
     <button class="tab-btn" data-tab="tab-email-messages">Log Email</button>
     <button class="tab-btn" data-tab="tab-cs-inbox">CS Inbox</button>
+    <button class="tab-btn" data-tab="tab-ai-settings">Instruksi AI</button>
   </div>
 
   <!-- Apps tab -->
@@ -307,6 +308,28 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Instruksi AI (AiSyah) tab -->
+  <div id="tab-ai-settings" class="tab-panel">
+    <div class="card" style="max-width:720px;">
+      <div class="topbar" style="margin-bottom:4px;">
+        <h2 style="margin:0;">Instruksi AI — <span id="ai-settings-name">AiSyah</span></h2>
+        <span class="sub" id="ai-settings-status"></span>
+      </div>
+      <p class="sub" style="margin-top:0;">
+        Teks di bawah ini ditambahkan ke instruksi dasar AiSyah setiap kali membalas pelanggan —
+        pakai untuk mengatur gaya bicara, hal yang boleh/tidak boleh disebutkan, atau aturan khusus
+        lain, tanpa perlu minta ubah kode. Perubahan langsung aktif setelah disimpan.
+      </p>
+      <textarea id="ai-settings-persona" rows="10" style="width:100%; font-family:inherit; font-size:14px; padding:10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:inherit; resize:vertical;" placeholder="Contoh: Selalu akhiri pesan dengan emoji 🙏. Jangan pernah menyebut harga promo. Gunakan sapaan &quot;Kak&quot; ke pelanggan."></textarea>
+      <div class="hint" id="ai-settings-count" style="margin-top:4px;">0 / 4000 karakter</div>
+      <div class="row" style="margin-top:16px;">
+        <button class="btn-primary" id="btn-save-ai-settings" style="margin-top:0; width:auto;">Simpan</button>
+        <span class="sub" id="ai-settings-saved"></span>
+      </div>
+      <div class="error" id="ai-settings-error"></div>
     </div>
   </div>
 </div>
@@ -542,6 +565,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'tab-email-messages') loadEmailMessages();
     if (btn.dataset.tab === 'tab-wa-numbers') loadWANumbers();
     if (btn.dataset.tab === 'tab-cs-inbox') loadCSSessions();
+    if (btn.dataset.tab === 'tab-ai-settings') loadAISettings();
   });
 });
 
@@ -949,6 +973,42 @@ $('btn-close-cs-session').addEventListener('click', async () => {
     loadCSSessions();
   } catch (e) {
     toast('Gagal: ' + e.message);
+  }
+});
+
+// --- Instruksi AI (AiSyah persona) ---
+const AI_PERSONA_MAX = 4000;
+
+async function loadAISettings() {
+  $('ai-settings-error').textContent = '';
+  $('ai-settings-saved').textContent = '';
+  try {
+    const s = await api('/admin/ai-settings');
+    $('ai-settings-name').textContent = s.assistant_name || 'AiSyah';
+    $('ai-settings-status').textContent = s.active ? '● aktif' : '○ nonaktif (OPENAI_API_KEY belum diisi / dimatikan)';
+    $('ai-settings-persona').value = s.persona || '';
+    updateAIPersonaCount();
+  } catch (e) {
+    $('ai-settings-error').textContent = e.message;
+  }
+}
+
+function updateAIPersonaCount() {
+  const len = $('ai-settings-persona').value.length;
+  $('ai-settings-count').textContent = `${len} / ${AI_PERSONA_MAX} karakter`;
+}
+
+$('ai-settings-persona').addEventListener('input', updateAIPersonaCount);
+
+$('btn-save-ai-settings').addEventListener('click', async () => {
+  $('ai-settings-error').textContent = '';
+  $('ai-settings-saved').textContent = '';
+  try {
+    await api('/admin/ai-settings', { method: 'POST', body: { persona: $('ai-settings-persona').value } });
+    $('ai-settings-saved').textContent = 'Tersimpan ✓';
+    setTimeout(() => { $('ai-settings-saved').textContent = ''; }, 3000);
+  } catch (e) {
+    $('ai-settings-error').textContent = e.message;
   }
 });
 

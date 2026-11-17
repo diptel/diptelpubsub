@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +30,33 @@ var (
 	AIEnabled       = true
 )
 
+// aiPersona is a free-text instruction staff can edit from the panel ("Instruksi AI" tab) — tone,
+// house rules, things to always/never say — appended to every aiSystemPrompt call, so adjusting
+// AiSyah's personality no longer requires a code change and redeploy. Loaded from hub_settings
+// (key "ai_persona") at startup by main.go, and kept in sync in memory whenever a staff member
+// saves a new value via UpdateAISettings in cs_admin.go — a mutex because it's read from the
+// per-message AI goroutines and written from an HTTP handler goroutine.
+var (
+	aiPersonaMu sync.RWMutex
+	aiPersona   string
+)
+
+// SetAIPersonaCache updates the in-memory persona instruction, called once at startup (main.go,
+// loaded from the database) and again every time it's saved from the panel (cs_admin.go) — so a
+// save takes effect immediately, with no restart needed.
+func SetAIPersonaCache(v string) {
+	aiPersonaMu.Lock()
+	aiPersona = v
+	aiPersonaMu.Unlock()
+}
+
+// AIPersona returns the current persona instruction (possibly empty — nothing saved yet).
+func AIPersona() string {
+	aiPersonaMu.RLock()
+	defer aiPersonaMu.RUnlock()
+	return aiPersona
+}
+
 // aiActive reports whether the AI assistant should be answering right now at all (global
 // kill-switch and API key configured) — a per-session check (handled_by, status) still applies
 // on top of this in continueOpenSession.
@@ -41,15 +69,17 @@ func aiActive() bool {
 // the assistant introduces itself by name from the first message in the conversation.
 func aiGreeting(appLabel string) string {
 	return fmt.Sprintf(
-		"Halo, saya %s, asisten CS %s. Ceritakan kendala Anda beserta nomor pesanan/transaksi (jika ada), saya bantu dulu ya. Ketik MENU untuk ganti layanan.",
-		AIAssistantName, appLabel,
+		"Halo, terima kasih telah menghubungi %s. Saya %s, asisten layanan pelanggan kami. "+
+			"Silakan ceritakan kendala Anda beserta nomor pesanan/transaksi (jika ada), agar dapat segera kami bantu. "+
+			"Ketik MENU untuk berpindah layanan.",
+		appLabel, AIAssistantName,
 	)
 }
 
 // aiMenuHeader is the first line of the service-selection menu (buildMenu in cs_bot.go), so the
 // assistant's name appears even before a customer has picked a tenant.
 func aiMenuHeader() string {
-	return fmt.Sprintf("Halo! Saya %s, asisten BRIIX. Anda ingin bantuan untuk layanan apa?\n", AIAssistantName)
+	return fmt.Sprintf("Halo, terima kasih telah menghubungi BRIIX. Saya %s, asisten layanan pelanggan kami. Ada yang bisa kami bantu? Silakan pilih layanan berikut:\n", AIAssistantName)
 }
 
 // maybeReplyWithAI kicks off an async AI reply for an ordinary message in an open session, if the
@@ -133,13 +163,20 @@ func aiSystemPrompt(appLabel, refPrefix string) string {
 	if refPrefix != "" {
 		refNote = fmt.Sprintf(" (biasanya berformat %s...)", refPrefix)
 	}
-	return fmt.Sprintf(
-		"Kamu adalah %s, asisten CS AI berbasis WhatsApp untuk layanan %s, bagian dari ekosistem BRIIX. "+
-			"Jawab singkat, sopan, dan dalam Bahasa Indonesia. "+
-			"Jika pelanggan sudah menyebutkan nomor pesanan/transaksi%s, akui nomor tersebut dan jangan menanyakannya ulang. "+
-			"Kamu TIDAK punya akses ke data pesanan/transaksi/pembayaran pelanggan — jangan berpura-pura mengecek atau memastikan status apa pun. "+
-			"Jika pelanggan butuh pengecekan data, komplain yang serius, atau terlihat kesal/minta bicara dengan manusia, "+
-			"katakan dengan sopan bahwa kamu akan meneruskan ke tim CS manusia untuk ditindaklanjuti, lalu berhenti — jangan mencoba menyelesaikannya sendiri.",
+	prompt := fmt.Sprintf(
+		"Kamu adalah %s, asisten layanan pelanggan resmi untuk %s, bagian dari ekosistem BRIIX. "+
+			"Gunakan Bahasa Indonesia yang sopan, hangat, dan profesional, selayaknya staf customer service perusahaan — ringkas dan jelas, tanpa istilah teknis atau singkatan yang membingungkan pelanggan. "+
+			"Jika pelanggan sudah menyebutkan nomor pesanan/transaksi%s, akui nomor tersebut dengan baik dan jangan menanyakannya ulang. "+
+			"Kamu TIDAK memiliki akses ke data pesanan/transaksi/pembayaran pelanggan — jangan pernah berpura-pura sedang mengecek atau memastikan status apa pun. "+
+			"Jika pelanggan memerlukan pengecekan data, menyampaikan komplain yang serius, atau tampak kurang puas, "+
+			"sampaikan dengan sopan bahwa keluhannya akan diteruskan kepada tim kami untuk ditindaklanjuti lebih lanjut, lalu hentikan upaya penyelesaian sendiri — jangan menyebut dirimu sebagai AI/robot atau membedakan diri dari \"tim manusia\"; cukup sebut \"tim kami\" seolah bagian dari satu tim layanan pelanggan yang sama.",
 		AIAssistantName, appLabel, refNote,
 	)
+	// Staff-editable addendum (panel tab "Instruksi AI") — house style, extra dos/don'ts, anything
+	// that shouldn't require a code change. Appended last so it can refine but not be silently
+	// dropped by the base prompt above; AIPersona() is "" until someone saves one from the panel.
+	if persona := strings.TrimSpace(AIPersona()); persona != "" {
+		prompt += "\n\nInstruksi tambahan dari admin (ikuti juga ini):\n" + persona
+	}
+	return prompt
 }
