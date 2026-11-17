@@ -541,7 +541,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (btn.dataset.tab === 'tab-wa-messages') loadWAMessages();
     if (btn.dataset.tab === 'tab-email-messages') loadEmailMessages();
     if (btn.dataset.tab === 'tab-wa-numbers') loadWANumbers();
-    if (btn.dataset.tab === 'tab-cs-inbox') loadCSSessions();
+    if (btn.dataset.tab === 'tab-cs-inbox') { loadCSSessions(); startCSSessionsPolling(); }
+    else { stopCSSessionsPolling(); stopCSMessagesPolling(); }
   });
 });
 
@@ -830,9 +831,36 @@ async function loadEmailMessages() {
 $('btn-refresh-email-messages').addEventListener('click', loadEmailMessages);
 
 // --- CS Inbox ---
+// Panel ini tidak punya websocket/push server-side, jadi "realtime" di sini artinya polling
+// ringan: daftar sesi tiap 10 detik selama tab CS Inbox terbuka, dan isi percakapan yang sedang
+// dibuka tiap 4 detik — supaya staf tidak perlu klik "Refresh" manual untuk melihat pesan baru
+// dari pelanggan atau balasan AiSyah. Interval dihentikan begitu tab/percakapan ditutup, dan
+// dijeda saat tab browser tidak terlihat (document.hidden) supaya tidak membebani server kalau
+// panel dibiarkan terbuka di tab background.
 let csActiveSessionId = null;
 let csActiveSession = null;
 let csSessionsCache = [];
+let csSessionsPollTimer = null;
+let csMessagesPollTimer = null;
+
+function startCSSessionsPolling() {
+  stopCSSessionsPolling();
+  csSessionsPollTimer = setInterval(() => {
+    if (!document.hidden) loadCSSessions();
+  }, 10000);
+}
+function stopCSSessionsPolling() {
+  if (csSessionsPollTimer) { clearInterval(csSessionsPollTimer); csSessionsPollTimer = null; }
+}
+function startCSMessagesPolling(sessionId) {
+  stopCSMessagesPolling();
+  csMessagesPollTimer = setInterval(() => {
+    if (!document.hidden && csActiveSessionId === sessionId) refreshCSMessages(sessionId);
+  }, 4000);
+}
+function stopCSMessagesPolling() {
+  if (csMessagesPollTimer) { clearInterval(csMessagesPollTimer); csMessagesPollTimer = null; }
+}
 
 async function loadCSSessions() {
   const status = $('cs-filter-status').value;
@@ -882,11 +910,18 @@ async function openCSChat(session) {
   $('cs-chat-title').textContent = `${session.phone} — ${session.app_name || 'belum pilih layanan'}`;
   renderCSHandledState(session);
   await refreshCSMessages(session.id);
+  startCSMessagesPolling(session.id);
 }
 
+let csChatMessageCount = 0;
 async function refreshCSMessages(sessionId) {
   const msgs = await api(`/admin/cs-sessions/${sessionId}/messages`);
   const box = $('cs-chat-messages');
+  // Pertahankan posisi scroll kalau staf sedang membaca riwayat lama; hanya auto-scroll ke bawah
+  // kalau sebelumnya memang sudah di/dekat bawah, atau ada pesan baru masuk (biar tidak kelewat
+  // saat sedang dijeda baca pesan lama lewat polling 4 detik).
+  const wasNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  const hasNewMessages = msgs.length !== csChatMessageCount;
   box.innerHTML = '';
   for (const m of msgs) {
     const bubble = document.createElement('div');
@@ -899,7 +934,8 @@ async function refreshCSMessages(sessionId) {
     `;
     box.appendChild(bubble);
   }
-  box.scrollTop = box.scrollHeight;
+  csChatMessageCount = msgs.length;
+  if (wasNearBottom || hasNewMessages) box.scrollTop = box.scrollHeight;
 }
 
 $('btn-send-cs-reply').addEventListener('click', async () => {
@@ -942,6 +978,7 @@ $('btn-close-cs-session').addEventListener('click', async () => {
   try {
     await api(`/admin/cs-sessions/${csActiveSessionId}/close`, { method: 'POST' });
     toast('Sesi ditutup');
+    stopCSMessagesPolling();
     csActiveSessionId = null;
     csActiveSession = null;
     $('cs-chat-view').classList.add('hidden');
