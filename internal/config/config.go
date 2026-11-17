@@ -28,6 +28,14 @@ type Config struct {
 	// CS Hub: how many hours a session can sit with no new message before it's auto-closed (and
 	// the customer notified). CS_SESSION_IDLE_HOURS env var; defaults to 24.
 	CSSessionIdleHours int
+
+	// CS Hub AI assistant ("AiSyah"): answers new CS sessions automatically via OpenAI until a
+	// staff member takes over from the panel. Empty OpenAIAPIKey just means the assistant stays
+	// silent (sessions still work, staff answers manually) — not a startup error.
+	OpenAIAPIKey    string // OPENAI_API_KEY
+	OpenAIModel     string // OPENAI_MODEL, defaults to gpt-4o-mini
+	AIAssistantName string // AI_ASSISTANT_NAME, defaults to "AiSyah"
+	CSAIEnabled     bool   // CS_AI_ENABLED, defaults to true — kill switch without unsetting the API key
 }
 
 func Load() Config {
@@ -48,6 +56,11 @@ func Load() Config {
 		SMTPFromName: getEnv("SMTP_FROM_NAME", "Notification Hub"),
 
 		CSSessionIdleHours: getEnvInt("CS_SESSION_IDLE_HOURS", 24),
+
+		OpenAIAPIKey:    getEnv("OPENAI_API_KEY", ""),
+		OpenAIModel:     getEnv("OPENAI_MODEL", "gpt-4o-mini"),
+		AIAssistantName: getEnv("AI_ASSISTANT_NAME", "AiSyah"),
+		CSAIEnabled:     getEnv("CS_AI_ENABLED", "true") == "true",
 	}
 }
 
