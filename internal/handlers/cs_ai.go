@@ -41,15 +41,17 @@ func aiActive() bool {
 // the assistant introduces itself by name from the first message in the conversation.
 func aiGreeting(appLabel string) string {
 	return fmt.Sprintf(
-		"Halo, saya %s, asisten CS %s. Ceritakan kendala Anda beserta nomor pesanan/transaksi (jika ada), saya bantu dulu ya. Ketik MENU untuk ganti layanan.",
-		AIAssistantName, appLabel,
+		"Halo, terima kasih telah menghubungi %s. Saya %s, asisten layanan pelanggan kami. "+
+			"Silakan ceritakan kendala Anda beserta nomor pesanan/transaksi (jika ada), agar dapat segera kami bantu. "+
+			"Ketik MENU untuk berpindah layanan.",
+		appLabel, AIAssistantName,
 	)
 }
 
 // aiMenuHeader is the first line of the service-selection menu (buildMenu in cs_bot.go), so the
 // assistant's name appears even before a customer has picked a tenant.
 func aiMenuHeader() string {
-	return fmt.Sprintf("Halo! Saya %s, asisten BRIIX. Anda ingin bantuan untuk layanan apa?\n", AIAssistantName)
+	return fmt.Sprintf("Halo, terima kasih telah menghubungi BRIIX. Saya %s, asisten layanan pelanggan kami. Ada yang bisa kami bantu? Silakan pilih layanan berikut:\n", AIAssistantName)
 }
 
 // maybeReplyWithAI kicks off an async AI reply for an ordinary message in an open session, if the
@@ -134,12 +136,12 @@ func aiSystemPrompt(appLabel, refPrefix string) string {
 		refNote = fmt.Sprintf(" (biasanya berformat %s...)", refPrefix)
 	}
 	return fmt.Sprintf(
-		"Kamu adalah %s, asisten CS AI berbasis WhatsApp untuk layanan %s, bagian dari ekosistem BRIIX. "+
-			"Jawab singkat, sopan, dan dalam Bahasa Indonesia. "+
-			"Jika pelanggan sudah menyebutkan nomor pesanan/transaksi%s, akui nomor tersebut dan jangan menanyakannya ulang. "+
-			"Kamu TIDAK punya akses ke data pesanan/transaksi/pembayaran pelanggan — jangan berpura-pura mengecek atau memastikan status apa pun. "+
-			"Jika pelanggan butuh pengecekan data, komplain yang serius, atau terlihat kesal/minta bicara dengan manusia, "+
-			"katakan dengan sopan bahwa kamu akan meneruskan ke tim CS manusia untuk ditindaklanjuti, lalu berhenti — jangan mencoba menyelesaikannya sendiri.",
+		"Kamu adalah %s, asisten layanan pelanggan resmi untuk %s, bagian dari ekosistem BRIIX. "+
+			"Gunakan Bahasa Indonesia yang sopan, hangat, dan profesional, selayaknya staf customer service perusahaan — ringkas dan jelas, tanpa istilah teknis atau singkatan yang membingungkan pelanggan. "+
+			"Jika pelanggan sudah menyebutkan nomor pesanan/transaksi%s, akui nomor tersebut dengan baik dan jangan menanyakannya ulang. "+
+			"Kamu TIDAK memiliki akses ke data pesanan/transaksi/pembayaran pelanggan — jangan pernah berpura-pura sedang mengecek atau memastikan status apa pun. "+
+			"Jika pelanggan memerlukan pengecekan data, menyampaikan komplain yang serius, atau tampak kurang puas, "+
+			"sampaikan dengan sopan bahwa keluhannya akan diteruskan kepada tim kami untuk ditindaklanjuti lebih lanjut, lalu hentikan upaya penyelesaian sendiri — jangan menyebut dirimu sebagai AI/robot atau membedakan diri dari \"tim manusia\"; cukup sebut \"tim kami\" seolah bagian dari satu tim layanan pelanggan yang sama.",
 		AIAssistantName, appLabel, refNote,
 	)
 }
