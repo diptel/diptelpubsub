@@ -28,7 +28,15 @@ const notifAutoReplyGap = 6 * time.Hour
 type fonnteIncoming struct {
 	Sender  string `json:"sender"`
 	Message string `json:"message"`
-	Text    string `json:"text"` // alternate field name seen in some Fonnte payload variants
+	Text    string `json:"text"`   // alternate field name seen in some Fonnte payload variants
+	Member  string `json:"member"` // set by Fonnte only when the message came from a WhatsApp group — the group member's own number; Sender is the group's id in that case, not a reachable phone.
+}
+
+// isGroupMessage reports whether an incoming Fonnte message came from a WhatsApp group rather
+// than a 1:1 chat — Fonnte sets "member" (the group participant's number) only in that case,
+// while Sender holds the group's id.
+func (in fonnteIncoming) isGroupMessage() bool {
+	return strings.TrimSpace(in.Member) != ""
 }
 
 // FonnteWebhook receives incoming WhatsApp replies for one hub-managed number.
@@ -60,6 +68,15 @@ func FonnteWebhook(pool *pgxpool.Pool, limiter *wa.Limiter) http.HandlerFunc {
 		message := strings.TrimSpace(in.Message)
 		if message == "" {
 			message = strings.TrimSpace(in.Text)
+		}
+
+		// A notification number (otp/general) is a one-way broadcast channel. If someone forwards or
+		// mentions it inside a WhatsApp group, Fi wants it to stay completely silent there (17 Nov
+		// 2026) — no canned "nomor ini khusus notifikasi" reply derailing the group's own
+		// conversation — even though a 1:1 reply still gets that reply as usual.
+		if number.Category != "cs" && in.isGroupMessage() {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored: group message to notification number"})
+			return
 		}
 
 		switch number.Category {
@@ -145,6 +162,7 @@ func parseFonnteIncoming(r *http.Request) (fonnteIncoming, bool) {
 	in.Sender = r.FormValue("sender")
 	in.Message = r.FormValue("message")
 	in.Text = r.FormValue("text")
+	in.Member = r.FormValue("member")
 	return in, true
 }
 
