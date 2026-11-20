@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"pushhub/internal/db"
+	"pushhub/internal/fcmassist"
 )
 
 type createWANumberRequest struct {
@@ -290,6 +292,65 @@ func UpdateAppCS(pool *pgxpool.Pool) http.HandlerFunc {
 		if app.CSRefPrefix != nil {
 			resp["cs_ref_prefix"] = *app.CSRefPrefix
 		}
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+// UpdateAppFCM turns Android/FCM on (or off) for a tenant and sets its channel-mapping rules —
+// see migrations/0007_fcm.sql, internal/fcmassist/rules.go, and the "menambah tenant baru"
+// how-to in the PushHub status doc. credentials_path is the in-container path to a Firebase
+// service-account JSON key (e.g. "/app/secrets/firebase-briix-project.json" — several tenants may
+// point at the same file when they share a Firebase project); omit/"" to turn FCM back off for
+// this tenant (existing tokens are left alone, but new kind:"fcm" subscriptions are rejected
+// again). channel_rules is optional — when present it replaces the tenant's whole rule set
+// (array, evaluated in order, first match wins; see fcmassist.ChannelRule for the shape); when
+// omitted entirely, the existing rules are left untouched (so credentials can be rotated without
+// re-sending the rules every time).
+// POST /admin/apps/{slug}/fcm  { "credentials_path": "/app/secrets/...", "channel_rules": [...] }
+func UpdateAppFCM(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to read request body")
+			return
+		}
+
+		var req struct {
+			CredentialsPath string          `json:"credentials_path"`
+			ChannelRules    json.RawMessage `json:"channel_rules,omitempty"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		// Validate the rules shape up front (if provided) so a typo doesn't silently get stored
+		// as an always-no-match rule set later — fcmassist.ParseChannelRules on the read side
+		// stays lenient on purpose, but writes should fail loudly.
+		if req.ChannelRules != nil {
+			var rules []fcmassist.ChannelRule
+			if err := json.Unmarshal(req.ChannelRules, &rules); err != nil {
+				writeError(w, http.StatusBadRequest, "channel_rules must be a JSON array of {url_prefix|url_contains|title_prefix, channel_id, priority}")
+				return
+			}
+		}
+
+		// nil ChannelRules (key omitted entirely) tells db.UpdateAppFCM to leave the existing
+		// rules untouched — e.g. rotating credentials_path without re-sending the rules.
+		app, err := db.UpdateAppFCM(r.Context(), pool, slug, req.CredentialsPath, req.ChannelRules)
+		if err != nil {
+			if err == db.ErrNotFound {
+				writeError(w, http.StatusNotFound, "unknown app slug")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to update FCM settings")
+			return
+		}
+		resp := map[string]any{"slug": app.Slug, "fcm_enabled": app.FCMCredentialsPath != nil}
+		if app.FCMCredentialsPath != nil {
+			resp["fcm_credentials_path"] = *app.FCMCredentialsPath
+		}
+		resp["fcm_channel_rules"] = fcmassist.ParseChannelRules(app.FCMChannelRules)
 		writeJSON(w, http.StatusOK, resp)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"pushhub/internal/config"
 	"pushhub/internal/db"
 	"pushhub/internal/emailsend"
+	"pushhub/internal/fcmassist"
 	"pushhub/internal/handlers"
 	"pushhub/internal/middleware"
 	"pushhub/internal/panel"
@@ -53,6 +54,12 @@ func main() {
 	} else {
 		log.Printf("pushhub: CS Hub AI assistant %q active (model %s)", cfg.AIAssistantName, cfg.OpenAIModel)
 	}
+
+	// FCM (Android push) — see internal/fcmassist and migrations/0007_fcm.sql. One shared client
+	// for the whole process; it caches an OAuth2 token per tenant's credentials file itself, so
+	// there's nothing to configure here (unlike AIClient, FCM credentials are per-tenant, not a
+	// single global env var).
+	handlers.FCMClient = fcmassist.New()
 
 	// Staff-editable persona instruction (panel tab "Instruksi AI") — loaded once here so the
 	// first message after a restart already uses whatever was last saved; UpdateAISettings keeps
@@ -107,6 +114,7 @@ func main() {
 	mux.Handle("POST /admin/apps/{slug}/regenerate-key", adminAuth(handlers.RegenerateAppKey(pool)))
 	mux.Handle("POST /admin/apps/{slug}/webhook", adminAuth(handlers.UpdateAppWebhook(pool)))
 	mux.Handle("POST /admin/apps/{slug}/cs", adminAuth(handlers.UpdateAppCS(pool)))
+	mux.Handle("POST /admin/apps/{slug}/fcm", adminAuth(handlers.UpdateAppFCM(pool)))
 
 	// WhatsApp number management (hub-level Fonnte-connected senders) and message logs.
 	mux.Handle("GET /admin/wa-numbers", adminAuth(handlers.ListWANumbers(pool)))

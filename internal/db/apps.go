@@ -9,7 +9,7 @@ import (
 )
 
 const appColumns = `id, slug, name, api_key, vapid_public_key, vapid_private_key, vapid_subject, webhook_url,
-	cs_enabled, cs_menu_label, cs_ref_prefix, created_at, updated_at`
+	cs_enabled, cs_menu_label, cs_ref_prefix, fcm_credentials_path, fcm_channel_rules, created_at, updated_at`
 
 // CreateApp inserts a new tenant/app with its own VAPID keypair and API key.
 // webhookURL is optional (pass "" for none) — it's where incoming WhatsApp replies
@@ -71,6 +71,33 @@ func UpdateAppCS(ctx context.Context, pool *pgxpool.Pool, slug string, enabled b
 	return a, err
 }
 
+// UpdateAppFCM sets a tenant's Android/FCM config: credentialsPath is the in-container path to
+// its Firebase service-account JSON (several tenants may share the same path/project — see
+// migrations/0007_fcm.sql), and channelRules is the tenant's raw channel-mapping rules JSON (see
+// fcmassist.ParseChannelRules), stored as-is. Pass "" for credentialsPath to turn FCM back off
+// for this tenant (new "fcm" subscriptions are rejected again; existing tokens are untouched).
+// Pass nil for channelRules to leave the existing rules unchanged.
+func UpdateAppFCM(ctx context.Context, pool *pgxpool.Pool, slug, credentialsPath string, channelRules []byte) (*App, error) {
+	if channelRules == nil {
+		row := pool.QueryRow(ctx, `
+			UPDATE apps SET fcm_credentials_path = NULLIF($2, ''), updated_at = now() WHERE slug = $1
+			RETURNING `+appColumns, slug, credentialsPath)
+		a, err := scanApp(row)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return a, err
+	}
+	row := pool.QueryRow(ctx, `
+		UPDATE apps SET fcm_credentials_path = NULLIF($2, ''), fcm_channel_rules = $3::jsonb, updated_at = now() WHERE slug = $1
+		RETURNING `+appColumns, slug, credentialsPath, channelRules)
+	a, err := scanApp(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return a, err
+}
+
 // ListCSEnabledApps returns every tenant that should appear in the CS bot's service menu,
 // ordered by name — used both to render the menu and to detect a reference-prefix match.
 func ListCSEnabledApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
@@ -94,7 +121,7 @@ func ListCSEnabledApps(ctx context.Context, pool *pgxpool.Pool) ([]App, error) {
 func scanApp(row pgx.Row) (*App, error) {
 	var a App
 	err := row.Scan(&a.ID, &a.Slug, &a.Name, &a.APIKey, &a.VAPIDPublicKey, &a.VAPIDPrivateKey, &a.VAPIDSubject, &a.WebhookURL,
-		&a.CSEnabled, &a.CSMenuLabel, &a.CSRefPrefix, &a.CreatedAt, &a.UpdatedAt)
+		&a.CSEnabled, &a.CSMenuLabel, &a.CSRefPrefix, &a.FCMCredentialsPath, &a.FCMChannelRules, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +131,7 @@ func scanApp(row pgx.Row) (*App, error) {
 func scanAppRows(rows pgx.Rows) (*App, error) {
 	var a App
 	err := rows.Scan(&a.ID, &a.Slug, &a.Name, &a.APIKey, &a.VAPIDPublicKey, &a.VAPIDPrivateKey, &a.VAPIDSubject, &a.WebhookURL,
-		&a.CSEnabled, &a.CSMenuLabel, &a.CSRefPrefix, &a.CreatedAt, &a.UpdatedAt)
+		&a.CSEnabled, &a.CSMenuLabel, &a.CSRefPrefix, &a.FCMCredentialsPath, &a.FCMChannelRules, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
