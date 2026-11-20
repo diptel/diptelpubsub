@@ -81,3 +81,25 @@ func collectFCMTokens(rows pgx.Rows) ([]FCMToken, error) {
 	}
 	return out, rows.Err()
 }
+
+// CountFCMTokensByApp returns, per app, how many FCM (Android) tokens are currently registered —
+// used by the admin panel to show "N perangkat Android" next to each tenant, same pattern as
+// CountSubscriptionsByApp for Web Push.
+func CountFCMTokensByApp(ctx context.Context, pool *pgxpool.Pool) (map[string]int, error) {
+	rows, err := pool.Query(ctx, `SELECT app_id, count(*) FROM fcm_tokens GROUP BY app_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]int{}
+	for rows.Next() {
+		var appID string
+		var n int
+		if err := rows.Scan(&appID, &n); err != nil {
+			return nil, err
+		}
+		out[appID] = n
+	}
+	return out, rows.Err()
+}

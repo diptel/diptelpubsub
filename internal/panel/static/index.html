@@ -168,6 +168,7 @@
     <button class="tab-btn" data-tab="tab-wa-numbers">Nomor WA</button>
     <button class="tab-btn" data-tab="tab-wa-messages">Log WhatsApp</button>
     <button class="tab-btn" data-tab="tab-email-messages">Log Email</button>
+    <button class="tab-btn" data-tab="tab-push-messages">Log Push</button>
     <button class="tab-btn" data-tab="tab-cs-inbox">CS Inbox</button>
     <button class="tab-btn" data-tab="tab-ai-settings">Instruksi AI</button>
   </div>
@@ -186,6 +187,7 @@
             <th>Subscriber</th>
             <th>API Key</th>
             <th>VAPID Public Key</th>
+            <th>FCM (Android)</th>
             <th>Webhook WA Masuk</th>
             <th>CS Hub</th>
             <th>Dibuat</th>
@@ -270,6 +272,31 @@
         <tbody id="email-messages-tbody"></tbody>
       </table>
       <p class="sub" id="email-messages-empty" style="margin-top:16px;">Belum ada email terkirim.</p>
+    </div>
+  </div>
+
+  <!-- Push messages tab -->
+  <div id="tab-push-messages" class="tab-panel">
+    <div class="card">
+      <div class="topbar" style="margin-bottom:12px;">
+        <h2 style="margin:0;">Log Push (200 terbaru)</h2>
+        <button class="btn-secondary btn-small" id="btn-refresh-push-messages">Refresh</button>
+      </div>
+      <p class="sub" style="margin:0 0 12px;">Gabungan Web Push (VAPID, browser/PWA) dan FCM (aplikasi Android).</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Kanal</th>
+            <th>App</th>
+            <th>Judul</th>
+            <th>Isi</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="push-messages-tbody"></tbody>
+      </table>
+      <p class="sub" id="push-messages-empty" style="margin-top:16px;">Belum ada notifikasi push terkirim.</p>
     </div>
   </div>
 
@@ -563,6 +590,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     $(btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'tab-wa-messages') loadWAMessages();
     if (btn.dataset.tab === 'tab-email-messages') loadEmailMessages();
+    if (btn.dataset.tab === 'tab-push-messages') loadPushMessages();
     if (btn.dataset.tab === 'tab-wa-numbers') loadWANumbers();
     if (btn.dataset.tab === 'tab-cs-inbox') { loadCSSessions(); startCSSessionsPolling(); }
     else { stopCSSessionsPolling(); stopCSMessagesPolling(); }
@@ -581,11 +609,15 @@ async function loadApps() {
     const webhookLabel = app.webhook_url
       ? `<span class="mono" title="${escapeHtml(app.webhook_url)}">${escapeHtml(app.webhook_url.slice(0, 28))}${app.webhook_url.length > 28 ? '…' : ''}</span>`
       : '<span class="muted">—</span>';
+    const fcmLabel = app.fcm_enabled
+      ? `<span class="pill ok" title="${escapeHtml(app.fcm_credentials_path || '')}">aktif</span> ${app.fcm_token_count} perangkat`
+      : '<span class="muted">—</span>';
     tr.innerHTML = `
       <td><strong>${escapeHtml(app.name)}</strong><br><span class="pill">${escapeHtml(app.slug)}</span></td>
       <td>${app.subscriber_count}</td>
       <td><code class="key" title="Klik untuk salin">${escapeHtml(app.api_key.slice(0,14))}…</code></td>
       <td><code class="key" title="Klik untuk salin">${escapeHtml(app.vapid_public_key.slice(0,14))}…</code></td>
+      <td>${fcmLabel}</td>
       <td>${webhookLabel}</td>
       <td>${app.cs_enabled ? `<span class="pill ok">menu CS</span> ${escapeHtml(app.cs_ref_prefix || '')}` : '<span class="muted">—</span>'}</td>
       <td>${escapeHtml(app.created_at)}</td>
@@ -853,6 +885,33 @@ async function loadEmailMessages() {
   }
 }
 $('btn-refresh-email-messages').addEventListener('click', loadEmailMessages);
+
+// --- Push messages log (Web Push + FCM) ---
+async function loadPushMessages() {
+  const msgs = await api('/admin/push-messages');
+  const tbody = $('push-messages-tbody');
+  tbody.innerHTML = '';
+  $('push-messages-empty').classList.toggle('hidden', msgs.length > 0);
+  for (const m of msgs) {
+    const tr = document.createElement('tr');
+    const channelPill = m.channel === 'fcm'
+      ? '<span class="pill">FCM (Android)</span>'
+      : '<span class="pill">Web Push</span>';
+    const statusPill = m.status === 'sent'
+      ? '<span class="pill ok">sent</span>'
+      : `<span class="pill danger" title="${escapeHtml(m.error || '')}">${escapeHtml(m.status)}</span>`;
+    tr.innerHTML = `
+      <td>${escapeHtml(m.created_at)}</td>
+      <td>${channelPill}</td>
+      <td>${m.app_id ? `<span class="mono">${escapeHtml(m.app_id.slice(0,8))}…</span>` : '<span class="muted">—</span>'}</td>
+      <td>${escapeHtml(m.title || '—')}</td>
+      <td style="max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtml(m.body || '')}">${escapeHtml(m.body || '')}</td>
+      <td>${statusPill}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+$('btn-refresh-push-messages').addEventListener('click', loadPushMessages);
 
 // --- CS Inbox ---
 // Panel ini tidak punya websocket/push server-side, jadi "realtime" di sini artinya polling

@@ -124,6 +124,7 @@ func main() {
 	mux.Handle("DELETE /admin/wa-numbers/{id}", adminAuth(handlers.DeleteWANumber(pool)))
 	mux.Handle("GET /admin/wa-messages", adminAuth(handlers.ListWAMessages(pool)))
 	mux.Handle("GET /admin/email-messages", adminAuth(handlers.ListEmailMessages(pool)))
+	mux.Handle("GET /admin/push-messages", adminAuth(handlers.ListPushMessages(pool)))
 
 	// CS Hub: inbox for the shared help-conversation number (see migrations/0004_cs_hub.sql).
 	mux.Handle("GET /admin/cs-sessions", adminAuth(handlers.ListCSSessions(pool)))

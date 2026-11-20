@@ -97,7 +97,13 @@ type appListItem struct {
 	CSMenuLabel     string `json:"cs_menu_label,omitempty"`
 	CSRefPrefix     string `json:"cs_ref_prefix,omitempty"`
 	SubscriberCount int    `json:"subscriber_count"`
-	CreatedAt       string `json:"created_at"`
+	// FCM (Android push) — lihat internal/fcmassist & POST /admin/apps/{slug}/fcm. FCMEnabled
+	// hanya berarti kredensialnya sudah diisi; tidak menjamin berkasnya benar-benar valid
+	// (baru ketahuan saat PushHub pertama kali mencoba kirim lewat token itu).
+	FCMEnabled         bool   `json:"fcm_enabled"`
+	FCMCredentialsPath string `json:"fcm_credentials_path,omitempty"`
+	FCMTokenCount      int    `json:"fcm_token_count"`
+	CreatedAt          string `json:"created_at"`
 }
 
 // ListApps returns every registered tenant for the panel dashboard, including each app's
@@ -117,6 +123,11 @@ func ListApps(pool *pgxpool.Pool) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to count subscriptions")
 			return
 		}
+		fcmCounts, err := db.CountFCMTokensByApp(r.Context(), pool)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to count FCM tokens")
+			return
+		}
 
 		out := make([]appListItem, 0, len(apps))
 		for _, a := range apps {
@@ -128,6 +139,7 @@ func ListApps(pool *pgxpool.Pool) http.HandlerFunc {
 				VAPIDSubject:    a.VAPIDSubject,
 				CSEnabled:       a.CSEnabled,
 				SubscriberCount: counts[a.ID],
+				FCMTokenCount:   fcmCounts[a.ID],
 				CreatedAt:       a.CreatedAt.Format("2006-01-02 15:04"),
 			}
 			if a.WebhookURL != nil {
@@ -138,6 +150,10 @@ func ListApps(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 			if a.CSRefPrefix != nil {
 				item.CSRefPrefix = *a.CSRefPrefix
+			}
+			if a.FCMCredentialsPath != nil && *a.FCMCredentialsPath != "" {
+				item.FCMEnabled = true
+				item.FCMCredentialsPath = *a.FCMCredentialsPath
 			}
 			out = append(out, item)
 		}
