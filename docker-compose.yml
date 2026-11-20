@@ -54,6 +54,14 @@ services:
       CS_AI_ENABLED: ${CS_AI_ENABLED:-true}
     ports:
       - "${HOST_PORT:-8080}:8080"
+    volumes:
+      # Firebase service-account JSON key files for the FCM (Android push) channel — see
+      # internal/fcmassist and migrations/0007_fcm.sql. Put a tenant's key file in ./secrets/ on
+      # the HOST (this compose file's directory) and it shows up at /app/secrets/<name> INSIDE
+      # the container; that in-container path is what apps.fcm_credentials_path (set via
+      # POST /admin/apps/{slug}/fcm) must point to. Several tenants may point at the same file
+      # when they share a Firebase project. Read-only: PushHub never writes here.
+      - ./secrets:/app/secrets:ro
     networks:
       - pushhub_net
 

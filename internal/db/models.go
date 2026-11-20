@@ -14,8 +14,17 @@ type App struct {
 	CSEnabled       bool    // muncul di menu bot CS Hub?
 	CSMenuLabel     *string // nama tampil di menu bot; fallback ke Name kalau kosong
 	CSRefPrefix     *string // mis. "KLR-" — dicocokkan di awal token pesan untuk auto-pilih tenant tanpa lewat menu
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+
+	// FCM (Android push) — lihat internal/fcmassist. NULL/kosong FCMCredentialsPath berarti
+	// tenant ini belum diaktifkan untuk FCM: POST /subscribe dengan kind "fcm" ditolak, Web Push
+	// tetap jalan seperti biasa. FCMChannelRules adalah array JSON mentah (lihat
+	// fcmassist.ParseChannelRules) — disimpan apa adanya di sini supaya paket db tidak perlu tahu
+	// bentuk aturan tersebut.
+	FCMCredentialsPath *string
+	FCMChannelRules    []byte
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type WANumber struct {
@@ -107,6 +116,20 @@ type Subscription struct {
 	P256dh     string
 	Auth       string
 	UserAgent  *string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+}
+
+// FCMToken is one Android device's push token (see fcm_tokens table / internal/fcmassist).
+// Upserted by (AppID, Token) — UserID/DeviceID/ClientApp can change on re-registration (a
+// different account logging into the same phone), see migrations/0007_fcm.sql.
+type FCMToken struct {
+	ID         string
+	AppID      string
+	UserID     *string
+	Token      string
+	DeviceID   *string
+	ClientApp  *string // "driver" | "mitra" | "app" | "kasir" | "admin" | nil
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 }
